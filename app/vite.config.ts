@@ -21,6 +21,6 @@ const catalystClientManifest = () => ({
 export default defineConfig({
   base: './', // relative asset paths: Catalyst serves the app under /app/
   plugins: [react(), catalystClientManifest()],
-  // Default `dist` (Catalyst Slate). `npm run build:cli` writes to ../client for `catalyst deploy` (client hosting).
-  build: { outDir: process.env.CATALYST_CLI ? '../client' : 'dist', emptyOutDir: true },
+  // Default ../web = committed static build served by Slate (Static framework, Root Path 'web'). `npm run build:cli` writes to ../client for `catalyst deploy` (client hosting).
+  build: { outDir: process.env.CATALYST_CLI ? '../client' : '../web', emptyOutDir: true },
 })
