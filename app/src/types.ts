@@ -65,7 +65,41 @@ export interface ConsumptionReport {
   lines: ConsumptionLine[]
 }
 
+export interface Vendor {
+  id: string // e.g. "V-001"
+  name: string
+  contact: string
+  phone: string
+  email: string
+  gstin: string
+  active: boolean
+}
+
+export interface POLine {
+  sku: string
+  qty: number
+  rate: number
+}
+
+export interface POReceipt {
+  sku: string
+  batchNo: string
+  expiry: string
+  qty: number
+}
+
+export interface PurchaseOrder {
+  id: string
+  date: string
+  vendorId: string
+  lines: POLine[]
+  status: 'open' | 'received'
+  receipts?: POReceipt[]
+}
+
 export interface DbState {
+  vendors: Vendor[]
+  purchaseOrders: PurchaseOrder[]
   machines: Machine[]
   items: Item[]
   batches: Batch[]

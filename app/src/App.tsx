@@ -5,12 +5,17 @@ import Machines from './pages/Machines'
 import Transfers from './pages/Transfers'
 import NewTransfer from './pages/NewTransfer'
 import Consumption from './pages/Consumption'
+import Vendors from './pages/Vendors'
+import PurchaseOrders from './pages/PurchaseOrders'
+import NewPurchaseOrder from './pages/NewPurchaseOrder'
 
 const nav = [
   ['/', 'Stock Dashboard'],
   ['/transfers', 'Transfer Orders'],
   ['/consumption', 'Consumption'],
   ['/machines', 'Machines'],
+  ['/vendors', 'Vendors'],
+  ['/purchase-orders', 'Purchase Orders'],
 ] as const
 
 export default function App() {
@@ -40,6 +45,9 @@ export default function App() {
           <Route path="/transfers/new" element={<NewTransfer />} />
           <Route path="/consumption" element={<Consumption />} />
           <Route path="/machines" element={<Machines />} />
+          <Route path="/vendors" element={<Vendors />} />
+          <Route path="/purchase-orders" element={<PurchaseOrders />} />
+          <Route path="/purchase-orders/new" element={<NewPurchaseOrder />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>

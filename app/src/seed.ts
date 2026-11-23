@@ -2,6 +2,11 @@ import type { DbState } from './types'
 
 // Demo data so the UI is usable before real Zoho/Catalyst data is connected.
 export const seed: DbState = {
+  vendors: [
+    { id: 'V-001', name: 'Crunchy Foods Pvt Ltd', contact: 'Meena', phone: '9800000001', email: 'orders@crunchyfoods.example', gstin: '29AAAAA0000A1Z5', active: true },
+    { id: 'V-002', name: 'FreshSip Beverages', contact: 'Arjun', phone: '9800000002', email: 'sales@freshsip.example', gstin: '29BBBBB1111B1Z6', active: true },
+  ],
+  purchaseOrders: [],
   machines: [
     { id: 'VM-001', name: 'Vending Machine 1', location: 'Tech Park Tower A', area: 'Whitefield', custodian: 'Ravi' },
     { id: 'VM-002', name: 'Vending Machine 2', location: 'Tech Park Tower B', area: 'Whitefield', custodian: 'Ravi' },

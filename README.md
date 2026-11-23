@@ -10,6 +10,7 @@ Next.js was not used: Catalyst client hosting is static only (no SSR).
 - `catalyst.json` – project config. Run `catalyst init` (or `catalyst login`) once to link the Catalyst project, then `catalyst deploy`.
 
 ## Status
+Includes a vendor module (vendors, purchase orders, goods receipt with batch/expiry into head-office stock).
 Working with local demo data (localStorage): stock dashboard, machines, transfer orders (batch select, high-margin suggestions),
 consumption upload (xlsx/csv) with Zoho-ready download. Zoho sync is a stub.
 

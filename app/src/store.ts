@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { seed } from './seed'
-import type { ConsumptionLine, DbState, TransferLine, TransferOrder } from './types'
+import type { ConsumptionLine, DbState, POLine, POReceipt, PurchaseOrder, TransferLine, TransferOrder, Vendor } from './types'
 
 // Local persistence layer (localStorage). Every mutation here maps 1:1 to a future
 // Catalyst Data Store / Function call – swap the internals, keep the signatures.
@@ -9,7 +9,7 @@ const KEY = 'snackit-db-v1'
 function load(): DbState {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as DbState
+    if (raw) return { ...structuredClone(seed), ...(JSON.parse(raw) as Partial<DbState>) } // fills in newer collections
   } catch {
     /* fall through to seed */
   }
@@ -117,4 +117,52 @@ export function applyConsumption(date: string, lines: ConsumptionLine[]): Result
     ],
   })
   return { ok: true, value: { shortfalls } }
+}
+
+export function saveVendor(v: Omit<Vendor, 'id'> & { id?: string }): Result<Vendor> {
+  if (!v.name.trim()) return { ok: false, error: 'Vendor name is required.' }
+  if (v.id) {
+    const updated = { ...v, id: v.id } as Vendor
+    commit({ ...state, vendors: state.vendors.map((x) => (x.id === v.id ? updated : x)) })
+    return { ok: true, value: updated }
+  }
+  const created: Vendor = { ...v, id: `V-${String(state.vendors.length + 1).padStart(3, '0')}` }
+  commit({ ...state, vendors: [...state.vendors, created] })
+  return { ok: true, value: created }
+}
+
+export function createPurchaseOrder(vendorId: string, lines: POLine[]): Result<PurchaseOrder> {
+  const clean = lines.filter((l) => l.sku && l.qty > 0)
+  if (!vendorId) return { ok: false, error: 'Select a vendor.' }
+  if (clean.length === 0) return { ok: false, error: 'Add at least one line with quantity.' }
+  const po: PurchaseOrder = {
+    id: `PO-${String(state.purchaseOrders.length + 1).padStart(4, '0')}`,
+    date: today(),
+    vendorId,
+    lines: clean,
+    status: 'open',
+  }
+  commit({ ...state, purchaseOrders: [po, ...state.purchaseOrders] })
+  return { ok: true, value: po }
+}
+
+/** Goods receipt: marks the PO received and adds the received batches to head-office stock. */
+export function receivePurchaseOrder(id: string, receipts: POReceipt[]): Result {
+  const po = state.purchaseOrders.find((p) => p.id === id)
+  if (!po || po.status === 'received') return { ok: false, error: 'Purchase order not open.' }
+  const got = receipts.filter((r) => r.qty > 0)
+  if (got.length === 0) return { ok: false, error: 'Enter received quantity for at least one line.' }
+  if (got.some((r) => !r.batchNo.trim() || !r.expiry)) return { ok: false, error: 'Batch number and expiry are required for every received line.' }
+  const batches = state.batches.map((b) => ({ ...b }))
+  for (const r of got) {
+    const b = batches.find((x) => x.sku === r.sku && x.batchNo === r.batchNo.trim())
+    if (b) b.qty += r.qty
+    else batches.push({ sku: r.sku, batchNo: r.batchNo.trim(), expiry: r.expiry, qty: r.qty })
+  }
+  commit({
+    ...state,
+    batches,
+    purchaseOrders: state.purchaseOrders.map((p) => (p.id === id ? { ...p, status: 'received', receipts: got } : p)),
+  })
+  return { ok: true, value: undefined }
 }
