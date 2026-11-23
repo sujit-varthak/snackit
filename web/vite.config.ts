@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 const catalystClientManifest = () => ({
   name: 'catalyst-client-manifest',
   closeBundle() {
+    if (!process.env.CATALYST_CLI) return
     const dir = resolve(import.meta.dirname, '../client')
     mkdirSync(dir, { recursive: true })
     writeFileSync(
@@ -20,5 +21,6 @@ const catalystClientManifest = () => ({
 export default defineConfig({
   base: './', // relative asset paths: Catalyst serves the app under /app/
   plugins: [react(), catalystClientManifest()],
-  build: { outDir: '../client', emptyOutDir: true },
+  // Default `dist` (Catalyst Slate). `npm run build:cli` writes to ../client for `catalyst deploy` (client hosting).
+  build: { outDir: process.env.CATALYST_CLI ? '../client' : 'dist', emptyOutDir: true },
 })
