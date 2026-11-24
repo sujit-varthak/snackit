@@ -1,23 +1,10 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { markTransferSynced, useDb } from '../store'
-import { syncTransferToZoho } from '../zoho'
+import { api } from '../api'
+import { Gate, useLoad } from '../useLoad'
 
 export default function Transfers() {
-  const db = useDb()
-  const [busy, setBusy] = useState('')
-
-  const sync = async (id: string) => {
-    const t = db.transfers.find((x) => x.id === id)
-    if (!t) return
-    setBusy(id)
-    try {
-      const { ref } = await syncTransferToZoho(t)
-      markTransferSynced(id, ref)
-    } finally {
-      setBusy('')
-    }
-  }
+  const transfers = useLoad(() => api.transfers())
+  const machines = useLoad(() => api.machines())
 
   return (
     <>
@@ -29,34 +16,35 @@ export default function Transfers() {
         <span className="spacer" />
         <Link to="/transfers/new"><button className="primary">New transfer order</button></Link>
       </div>
-      <div className="card">
-        {db.transfers.length === 0 ? (
-          <div className="empty">No transfer orders yet.</div>
-        ) : (
-          <table>
-            <thead>
-              <tr><th>Order</th><th>Date</th><th>Machine</th><th>Lines</th><th className="num">Units</th><th>Zoho Books</th></tr>
-            </thead>
-            <tbody>
-              {db.transfers.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.id}</td><td>{t.date}</td>
-                  <td>{t.machineId} · {db.machines.find((m) => m.id === t.machineId)?.location}</td>
-                  <td>{t.lines.map((l) => `${l.sku} (${l.batchNo}) ×${l.qty}`).join(', ')}</td>
-                  <td className="num">{t.lines.reduce((s, l) => s + l.qty, 0)}</td>
-                  <td>
-                    {t.zohoSync === 'synced' ? (
-                      <span className="badge ok">{t.zohoRef}</span>
-                    ) : (
-                      <button disabled={busy === t.id} onClick={() => sync(t.id)}>{busy === t.id ? 'Syncing…' : 'Sync (demo)'}</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <Gate states={[transfers, machines]}>
+        <div className="card">
+          {(transfers.data ?? []).length === 0 ? (
+            <div className="empty">No transfer orders yet.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr><th>Order</th><th>Date</th><th>Machine</th><th>Lines</th><th className="num">Units</th><th>Zoho Books</th></tr>
+              </thead>
+              <tbody>
+                {[...(transfers.data ?? [])].reverse().map((t) => (
+                  <tr key={t.transfer_no}>
+                    <td>{t.transfer_no}</td><td>{t.transfer_date}</td>
+                    <td>{t.machine_code} · {machines.data?.find((m) => m.machine_code === t.machine_code)?.location}</td>
+                    <td>{t.lines.map((l) => `${l.sku} (${l.batch_no}) ×${l.qty}`).join(', ')}</td>
+                    <td className="num">{t.lines.reduce((s, l) => s + l.qty, 0)}</td>
+                    <td>
+                      <span className={`badge ${t.zoho_sync === 'synced' ? 'ok' : t.zoho_sync === 'failed' ? 'bad' : 'warn'}`}>
+                        {t.zoho_sync === 'synced' ? 'Synced' : t.zoho_sync === 'failed' ? 'Failed' : 'Pending'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="hint">Sending orders to Zoho is the next step in this slice. Until then every order stays Pending.</p>
+        </div>
+      </Gate>
     </>
   )
 }

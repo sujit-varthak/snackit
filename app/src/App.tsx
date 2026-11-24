@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { resetDemoData } from './store'
+import { DEV_USERS, getRole, setRole, type Role } from './api'
 import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
 import Transfers from './pages/Transfers'
@@ -30,6 +31,20 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
+        <label className="who">
+          Signed in as
+          <select
+            value={getRole()}
+            onChange={(e) => {
+              setRole(e.target.value as Role)
+              window.location.reload()
+            }}
+          >
+            {(Object.keys(DEV_USERS) as Role[]).map((r) => (
+              <option key={r} value={r}>{DEV_USERS[r].label}</option>
+            ))}
+          </select>
+        </label>
         <button
           className="link"
           onClick={() => confirm('Reset all demo data?') && resetDemoData()}

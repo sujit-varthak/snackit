@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LocalNotice } from '../useLoad'
 import { saveVendor, useDb } from '../store'
 import type { Vendor } from '../types'
 
@@ -23,6 +24,7 @@ export default function Vendors() {
 
   return (
     <>
+      <LocalNotice />
       <div className="row">
         <div>
           <h2>Vendors</h2>

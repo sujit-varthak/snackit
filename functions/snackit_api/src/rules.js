@@ -49,7 +49,10 @@ async function stockFor(store, user, machineCode) {
   const machines = await visibleMachines(store, user)
   const ok = new Set(machines.map((m) => m.machine_code))
   if (machineCode && !ok.has(machineCode)) throw new AppError('NOT_ALLOWED', 'You cannot see that machine.')
-  return store.list('machine_stock', (r) => ok.has(r.machine_code) && (!machineCode || r.machine_code === machineCode))
+  const rows = await store.list('machine_stock', (r) => ok.has(r.machine_code) && (!machineCode || r.machine_code === machineCode))
+  // Expiry lives on the head-office batch; attach it so every role can see it without reading batches.
+  const batches = new Map((await store.list('batches')).map((b) => [b.batch_key, b]))
+  return rows.map((r) => ({ ...r, expiry: batches.get(batchKey(r.sku, r.batch_no))?.expiry || '' }))
 }
 
 // ---------- machines and vendors ----------

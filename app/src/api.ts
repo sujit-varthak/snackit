@@ -1,0 +1,83 @@
+// Client for the Catalyst function (docs/data-contract.md section 4). The browser only ever talks to this API, never to Zoho.
+
+export type Role = 'admin' | 'manager' | 'field'
+
+// Local sign-in stand-in. Catalyst Authentication replaces this; the role must then come from the login.
+export const DEV_USERS: Record<Role, { email: string; label: string }> = {
+  admin: { email: 'sujit@example.com', label: 'Sujit (Admin)' },
+  manager: { email: 'meena@example.com', label: 'Meena (Manager)' },
+  field: { email: 'ravi@example.com', label: 'Ravi (Field staff)' },
+}
+const ROLE_KEY = 'snackit-dev-role'
+
+export function getRole(): Role {
+  try {
+    const r = localStorage.getItem(ROLE_KEY)
+    if (r === 'admin' || r === 'manager' || r === 'field') return r
+  } catch {
+    /* storage unavailable */
+  }
+  return 'admin'
+}
+export function setRole(role: Role) {
+  try {
+    localStorage.setItem(ROLE_KEY, role)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export class ApiError extends Error {
+  code: string
+  status: number
+  details: Record<string, unknown>
+  constructor(code: string, message: string, status: number, details: Record<string, unknown> = {}) {
+    super(message)
+    this.code = code
+    this.status = status
+    this.details = details
+  }
+}
+
+export interface ApiMachine { machine_code: string; name: string; location: string; area: string; custodian: string; staff_emails: string; active: boolean }
+export interface ApiItem { sku: string; name: string; category: string; subcategory: string; barcode: string; cost: number; price: number }
+export interface ApiBatch { batch_key: string; sku: string; batch_no: string; expiry: string; qty: number }
+export interface ApiStock { stock_key: string; machine_code: string; sku: string; batch_no: string; qty: number; expiry: string }
+export interface ApiTransferLine { sku: string; batch_no: string; qty: number }
+export interface ApiTransfer { transfer_no: string; machine_code: string; transfer_date: string; lines: ApiTransferLine[]; zoho_sync: 'pending' | 'synced' | 'failed'; zoho_id: string; zoho_error: string }
+
+const BASE = import.meta.env.VITE_API_BASE ?? ''
+
+async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const role = getRole()
+  let res: Response
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      method,
+      headers: { 'content-type': 'application/json', 'x-user-email': DEV_USERS[role].email, 'x-user-role': role },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch {
+    throw new ApiError('OFFLINE', 'Cannot reach the server. Start the function (npm start in functions/snackit_api) and try again.', 0)
+  }
+  let data: unknown = null
+  try {
+    data = await res.json()
+  } catch {
+    /* empty or non-JSON body */
+  }
+  if (!res.ok) {
+    const e = (data as { error?: { code?: string; message?: string; details?: Record<string, unknown> } } | null)?.error
+    throw new ApiError(e?.code ?? 'ERROR', e?.message ?? `Request failed (${res.status}).`, res.status, e?.details ?? {})
+  }
+  return data as T
+}
+
+export const api = {
+  machines: () => call<ApiMachine[]>('GET', '/machines'),
+  items: () => call<ApiItem[]>('GET', '/items'),
+  batches: () => call<ApiBatch[]>('GET', '/batches'),
+  stock: (machineCode?: string) => call<ApiStock[]>('GET', `/stock${machineCode ? `?machine_code=${encodeURIComponent(machineCode)}` : ''}`),
+  transfers: () => call<ApiTransfer[]>('GET', '/transfers'),
+  createTransfer: (input: { machine_code: string; lines: ApiTransferLine[] }) => call<ApiTransfer>('POST', '/transfers', input),
+}

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LocalNotice } from '../useLoad'
 import { readSheet } from 'read-excel-file/browser'
 import { applyConsumption, useDb } from '../store'
 import type { ConsumptionLine } from '../types'
@@ -75,6 +76,7 @@ export default function Consumption() {
 
   return (
     <>
+      <LocalNotice />
       <h2>Daily Consumption</h2>
       <p className="sub">Upload Excel/CSV (Machine ID, SKU, Quantity). Deducts per-machine stock here; download the consolidated file for the Zoho Books invoice.</p>
 

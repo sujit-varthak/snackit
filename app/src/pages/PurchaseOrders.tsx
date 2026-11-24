@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LocalNotice } from '../useLoad'
 import { Link } from 'react-router-dom'
 import { receivePurchaseOrder, useDb } from '../store'
 import type { POReceipt, PurchaseOrder } from '../types'
@@ -28,6 +29,7 @@ export default function PurchaseOrders() {
 
   return (
     <>
+      <LocalNotice />
       <div className="row">
         <div>
           <h2>Purchase Orders</h2>

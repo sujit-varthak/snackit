@@ -196,6 +196,11 @@ test('field staff see only their machines and stock', async () => {
   assert.equal((await rules.visibleMachines(store, manager)).length, 5)
 })
 
+test('stock rows carry the batch expiry', async () => {
+  const rows = await rules.stockFor(fresh(), ravi, 'VM-001')
+  assert.equal(rows.find((r) => r.sku === 'SNK-001').expiry, '2027-02-15')
+})
+
 test('only admins add machines', async () => {
   const store = fresh()
   await rejects(rules.saveMachine(store, manager, { machine_code: 'VM-006', name: 'New' }), 'NOT_ALLOWED')
