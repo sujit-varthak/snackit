@@ -1,15 +1,12 @@
 'use strict'
-// Advanced I/O function (Express). All Zoho Books/Inventory calls go through here so
-// OAuth secrets never reach the browser. Routes are stubs until credentials are available.
-const express = require('express')
-const app = express()
-app.use(express.json())
+// Advanced I/O function entry. Chooses the data adapter from the STORE setting.
+// memory (default): local demo data, lost on restart. catalyst: Data Store, built in a later step.
+const { createApp } = require('./src/app')
+const { createMemoryStore } = require('./src/store/memory')
 
-app.get('/health', (_req, res) => res.json({ ok: true }))
+if (process.env.STORE === 'catalyst') {
+  throw new Error('The Catalyst Data Store adapter is not built yet. Use STORE=memory for now.')
+}
 
-// TODO: POST /transfers  -> create Transfer Order in Zoho Books (head office -> "vending machine" + machine lookup field)
-// TODO: GET  /items      -> proxy Zoho items/batches
-// TODO: POST /sync/:id   -> retry failed Zoho sync
-app.all('*', (_req, res) => res.status(501).json({ error: 'Not implemented yet' }))
-
-module.exports = app
+const store = createMemoryStore({ initial: require('./src/seed') })
+module.exports = createApp({ store })
