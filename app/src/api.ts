@@ -58,6 +58,11 @@ export interface ApiPo {
 }
 export interface ApiHoRow { batch_key: string; sku: string; batch_no: string; expiry: string; app_qty: number; zoho_qty: number; diff: number; status: 'match' | 'explained' | 'check'; why: string }
 export interface ApiHo { mode: 'simulated' | 'live'; fetched_at: string; ok: boolean; error?: string; rows: ApiHoRow[] }
+export interface ApiConsumptionLine { machine_code: string; sku: string; qty: number }
+export interface ApiReport { report_no: string; consumption_date: string; uploaded_by: string; lines: ApiConsumptionLine[]; invoiced: boolean }
+export interface ApiRowError { row: number; message: string }
+export type PullKind = 'items' | 'vendors' | 'batches'
+export interface ApiPull { kind: PullKind; mode: 'simulated' | 'live'; fetched: number; added: number; updated: number; unchanged: number; skipped: { ref: string; reason: string }[]; next: string; stopped: string }
 
 const BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -103,4 +108,9 @@ export const api = {
   zohoStatus: () => call<{ mode: 'simulated' | 'live'; up: boolean; error: string }>('GET', '/zoho/status'),
   devZoho: (down: boolean) => call<{ down: boolean }>('POST', '/dev/zoho', { down }),
   createTransfer: (input: { machine_code: string; lines: ApiTransferLine[] }) => call<ApiTransfer>('POST', '/transfers', input),
+  consumption: () => call<ApiReport[]>('GET', '/consumption'),
+  previewConsumption: (input: { consumption_date: string; lines: ApiConsumptionLine[] }) =>
+    call<{ ok: boolean; errors: ApiRowError[]; units: number }>('POST', '/consumption/preview', input),
+  applyConsumption: (input: { consumption_date: string; lines: ApiConsumptionLine[]; confirm_duplicate?: boolean }) => call<ApiReport>('POST', '/consumption', input),
+  pull: (kind: PullKind, after: string) => call<ApiPull>('POST', `/sync/${kind}`, { after }),
 }

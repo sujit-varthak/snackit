@@ -12,7 +12,7 @@ A link column stores the parent row's `ROWID` (a big number), not the readable c
 - the readable code column (for example `machine_code`), which the app and the tests use everywhere;
 - a link column (for example `machine_id`), which the database checks. It accepts only a real parent row and refuses anything else.
 
-The Catalyst data adapter (not built yet) looks up the parent's `ROWID` by its code and fills the link column on every write.
+The Catalyst data adapter looks up the parent's `ROWID` by its code and fills the link column on every write.
 
 | Child table | Link column | Points to | When the parent is deleted |
 |---|---|---|---|
@@ -55,10 +55,13 @@ JSON columns (`line_items`, `receipts`, `zoho_lines`) hold up to 10,000 characte
 
 ## The data adapter (`functions/snackit_api/src/store/catalyst.js`)
 
-Set `STORE=catalyst` and the function reads and writes these tables instead of the local demo data. It does the renames, fills the link columns, stores JSON as text (refusing anything over 10,000 characters), converts numbers and booleans, and undoes a failed multi-step change by replaying the inverse steps (Catalyst has no transactions).
+With `STORE=catalyst` (set in `catalyst-config.json`) the function reads and writes these tables instead of the local demo data. It does the renames, fills the link columns, stores JSON as text (refusing anything over 10,000 characters), converts numbers and booleans, writes an empty date as no value, and undoes a failed multi-step change by replaying the inverse steps (Catalyst has no transactions).
+
+The SDK client uses **admin scope**: the function decides who may do what, so the tables need no per-role permissions. That is why the deployed function refuses all requests until sign-in exists (`connect.md`).
 
 How it was checked:
-- All 48 tests pass on both the memory store and the Catalyst adapter (`npm test` runs both). The adapter runs over a fake Catalyst that copies this real structure and refuses unknown columns, bad links and duplicate keys.
+- All 69 tests pass on both the memory store and the Catalyst adapter (`npm test` runs both). The adapter runs over a fake Catalyst that copies this real structure and refuses unknown columns, bad links, bad dates and duplicate keys.
+- `test/catalyst-sdk.test.js` runs the real SDK and `index.js` against a local stand-in server: insert, update (`PATCH`), delete, lists longer than one page, admin credential, and the SDK's plain-text errors turned into ours (so a duplicate is recognised).
 - The three ZCQL query forms the real client sends (match by value, value with an apostrophe, paged list) were run against the real tables and returned the shape the adapter expects.
 
-Not checked: the Catalyst SDK calls themselves (`catalyst-sdk.js`), because they only run inside Catalyst. They are marked VERIFY for the first deploy.
+Not checked: any of it inside Catalyst. The stand-in server's answers are our reading of Catalyst; the first deploy confirms them (`connect.md`, step 5).

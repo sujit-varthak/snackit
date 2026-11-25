@@ -1,6 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { resetDemoData } from './store'
 import { DEV_USERS, getRole, setRole, type Role } from './api'
+import ZohoSync from './pages/ZohoSync'
 import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
 import Transfers from './pages/Transfers'
@@ -17,6 +17,7 @@ const nav = [
   ['/machines', 'Machines'],
   ['/vendors', 'Vendors'],
   ['/purchase-orders', 'Purchase Orders'],
+  ['/zoho', 'Fetch from Zoho'],
 ] as const
 
 export default function App() {
@@ -45,13 +46,6 @@ export default function App() {
             ))}
           </select>
         </label>
-        <button
-          className="link"
-          onClick={() => confirm('Reset all demo data?') && resetDemoData()}
-          title="Local demo data only"
-        >
-          Reset demo data
-        </button>
       </aside>
       <main>
         <Routes>
@@ -63,6 +57,7 @@ export default function App() {
           <Route path="/vendors" element={<Vendors />} />
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route path="/purchase-orders/new" element={<NewPurchaseOrder />} />
+          <Route path="/zoho" element={<ZohoSync />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>

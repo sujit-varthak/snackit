@@ -46,6 +46,7 @@ function createFakeCatalyst() {
       if (!tables[def.parent].has(String(val))) throw fail('INVALID_INPUT', `Invalid Foreign key value for column ${col}. ROWID of table ${def.parent} is expected`)
       return String(val)
     }
+    if (kind === DT && !/^\d{4}-\d{2}-\d{2}$/.test(String(val))) throw fail('INVALID_INPUT', `Invalid input value for ${col}. date value expected`)
     return String(val)
   }
 

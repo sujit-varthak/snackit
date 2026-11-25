@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node scripts/run-tests.js"
+    "test": "node scripts/run-tests.js",
+    "zoho:check": "node scripts/zoho-check.js"
   },
   "dependencies": {
     "express": "^4.21.2",

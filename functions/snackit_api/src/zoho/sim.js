@@ -1,16 +1,23 @@
 'use strict'
 const { AppError } = require('../errors')
 
-// Simulated Zoho. Behaves like the real thing for the calls we make: it keeps purchase orders,
-// receipts and head-office batches, refuses duplicates, and can be switched to "unreachable".
+// Simulated Zoho. Behaves like the real thing for the calls we make: it holds items, vendors and head-office batches,
+// keeps purchase orders and receipts, refuses duplicates, and can be switched to "unreachable".
 // Used until real Zoho credentials exist, and in tests.
-function createSimZoho({ batches = [] } = {}) {
+function createSimZoho({ batches = [], items = [], vendors = [] } = {}) {
   let down = false
   let next = 1000
   const id = (p) => `${p}${next++}`
   const orders = new Map() // po_no -> { purchaseorder_id, line_ids }
   const receives = new Map() // po_no -> { receive_id, batches }
-  const vendors = new Map() // vendor_code -> vendor_id
+  const itemList = items.map((i, n) => ({
+    zoho_item_id: `SIM-I-${n + 1}`, sku: i.sku, name: i.name, category: i.category, barcode: i.barcode, cost: i.cost, price: i.price, active: true, goods: true,
+  }))
+  const vendorList = new Map() // vendor_id -> vendor as Zoho holds it
+  vendors.forEach((v, n) => {
+    const vendorId = `SIM-V-${n + 1}`
+    vendorList.set(vendorId, { zoho_vendor_id: vendorId, name: v.name, contact: v.contact, phone: v.phone, email: v.email, gstin: v.gstin, active: true })
+  })
   const stock = new Map() // sku|batch_no -> { sku, batch_no, expiry, qty, batch_id }
   for (const b of batches) stock.set(`${b.sku}|${b.batch_no}`, { sku: b.sku, batch_no: b.batch_no, expiry: b.expiry, qty: b.qty, batch_id: id('B') })
 
@@ -23,10 +30,22 @@ function createSimZoho({ batches = [] } = {}) {
     setDown(v) { down = !!v },
     isDown: () => down,
     async ping() { guard(); return true },
+    async listItems() {
+      guard()
+      return itemList.map((i) => ({ ...i }))
+    },
+    async listVendors() {
+      guard()
+      return [...vendorList.values()].map((v) => ({ ...v }))
+    },
     async ensureVendor(vendor) {
       guard()
-      if (!vendors.has(vendor.vendor_code)) vendors.set(vendor.vendor_code, id('V'))
-      return { vendor_id: vendors.get(vendor.vendor_code) }
+      if (vendor.zoho_vendor_id) return { vendor_id: vendor.zoho_vendor_id }
+      const found = [...vendorList.values()].find((v) => v.name === vendor.name)
+      if (found) return { vendor_id: found.zoho_vendor_id }
+      const vendorId = id('V')
+      vendorList.set(vendorId, { zoho_vendor_id: vendorId, name: vendor.name, contact: vendor.contact || '', phone: vendor.phone || '', email: vendor.email || '', gstin: vendor.gstin || '', active: true })
+      return { vendor_id: vendorId }
     },
     // Lines are sku-based; the real client resolves Zoho item ids itself.
     async createPurchaseOrder({ po }) {
@@ -52,10 +71,11 @@ function createSimZoho({ batches = [] } = {}) {
       receives.set(po.po_no, rec)
       return rec
     },
-    // Head-office batches as Zoho holds them.
-    async listBatches() {
+    // Head-office batches as Zoho holds them; pass items to read only those.
+    async listBatches(wanted) {
       guard()
-      return [...stock.values()].map((b) => ({ ...b }))
+      const skus = wanted && new Set(wanted.map((i) => i.sku))
+      return [...stock.values()].filter((b) => !skus || skus.has(b.sku)).map((b) => ({ ...b }))
     },
   }
 }

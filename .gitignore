@@ -1,4 +1,5 @@
 node_modules
 client
 .catalystrc
-.local-data.json
+.local-data*.json
+.env

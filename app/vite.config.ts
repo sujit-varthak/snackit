@@ -22,6 +22,11 @@ export default defineConfig({
   base: './', // relative asset paths: Catalyst serves the app under /app/
   plugins: [react(), catalystClientManifest()],
   server: { proxy: { '/api': 'http://localhost:3100' } }, // local function: npm start in functions/snackit_api
+  // On Catalyst client hosting the function answers under /server/<name> on the same domain. A build hosted elsewhere
+  // (Slate) needs VITE_API_BASE set to the function's full address.
+  define: process.env.CATALYST_CLI
+    ? { 'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE ?? '/server/snackit_api') }
+    : {},
   // Default ../web = committed static build served by Slate (Static framework, Root Path 'web'). `npm run build:cli` writes to ../client for `catalyst deploy` (client hosting).
   build: { outDir: process.env.CATALYST_CLI ? '../client' : '../web', emptyOutDir: true },
 })

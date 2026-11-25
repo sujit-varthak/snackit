@@ -3,7 +3,9 @@
     "name": "snackit_api",
     "stack": "node20",
     "type": "advancedio",
-    "env_variables": {}
+    "env_variables": {
+      "STORE": "catalyst"
+    }
   },
   "execution": {
     "main": "index.js"

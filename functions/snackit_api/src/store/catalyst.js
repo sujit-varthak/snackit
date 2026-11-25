@@ -32,6 +32,7 @@ function createCatalystStore(client) {
   function toDb(table, row) {
     const out = {}
     const json = TABLES[table].json || []
+    const types = TYPES[table] || {}
     for (const [k, v] of Object.entries(row)) {
       if (v === undefined) continue
       const col = toDbName[k] || k
@@ -39,6 +40,8 @@ function createCatalystStore(client) {
         const text = JSON.stringify(v ?? [])
         if (text.length > MAX_TEXT) throw new AppError('INVALID_INPUT', `${table}.${k} is too long to store (${text.length} characters, limit ${MAX_TEXT}). Split the order into smaller ones.`)
         out[col] = text
+      } else if (types[k] === 'date' && v === '') {
+        out[col] = null
       } else {
         out[col] = v
       }

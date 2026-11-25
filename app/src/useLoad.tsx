@@ -47,11 +47,3 @@ export function Gate({ states, children }: { states: { loading: boolean; error: 
   if (states.some((s) => s.loading)) return <div className="card"><p className="sub">Loading…</p></div>
   return <>{children}</>
 }
-
-export function LocalNotice() {
-  return (
-    <div className="notice">
-      This screen still uses demo data kept on this device. It moves to the shared server in the next slice, after transfers.
-    </div>
-  )
-}

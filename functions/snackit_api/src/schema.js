@@ -28,13 +28,16 @@ const CATALYST = {
 }
 
 // Fields that are not plain text. Catalyst returns numbers and booleans as strings, so the adapter converts on read.
+// An empty date is written as "no value", because a date column does not take empty text.
 const TYPES = {
   machines: { active: 'bool' },
   items: { cost: 'double', price: 'double' },
   vendors: { active: 'bool' },
-  batches: { qty: 'int' },
+  batches: { qty: 'int', expiry: 'date' },
   machine_stock: { qty: 'int' },
-  consumption_reports: { invoiced: 'bool' },
+  transfers: { transfer_date: 'date' },
+  consumption_reports: { invoiced: 'bool', consumption_date: 'date' },
+  purchase_orders: { po_date: 'date' },
 }
 
 const batchKey = (sku, batchNo) => `${sku}|${batchNo}`

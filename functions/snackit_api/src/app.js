@@ -3,6 +3,7 @@ const express = require('express')
 const rules = require('./rules')
 const { AppError } = require('./errors')
 const sync = require('./sync')
+const pull = require('./pull')
 const { createSimZoho } = require('./zoho/sim')
 
 // Local sign-in for development: send x-user-email and x-user-role (admin, manager, field).
@@ -16,7 +17,12 @@ function devAuth(req) {
   return { email, role }
 }
 
-function createApp({ store, auth = devAuth, zoho = createSimZoho() }) {
+// Used on the real tables until Catalyst sign-in exists: everyone is refused.
+function signInNotSetUp() {
+  throw new AppError('NOT_ALLOWED', 'Sign-in is not set up yet. For testing only, set DEV_AUTH=on (anyone with the address can then act as admin).')
+}
+
+function createApp({ store, auth = devAuth, zoho = createSimZoho(), allowSimulatedPull = true }) {
   const app = express()
   app.use(express.json({ limit: '2mb' }))
 
@@ -98,6 +104,16 @@ function createApp({ store, auth = devAuth, zoho = createSimZoho() }) {
     managerOnly(req.user)
     return sync.headOfficeComparison(store, zoho)
   }))
+  // Fetch from Zoho into our tables. Each call works for a limited time; the caller repeats with after = next.
+  const pulls = { items: pull.pullItems, vendors: pull.pullVendors, batches: pull.pullBatches }
+  api.post('/sync/:what', wrap(async (req) => {
+    if (req.user.role !== 'admin') throw new AppError('NOT_ALLOWED', 'Only an admin can fetch from Zoho.')
+    if (!Object.hasOwn(pulls, req.params.what)) throw new AppError('NOT_FOUND', 'No such endpoint.')
+    if (zoho.mode === 'simulated' && !allowSimulatedPull) {
+      throw new AppError('NOT_ALLOWED', 'Zoho is simulated. Set ZOHO_MODE=live before fetching, so demo data does not get into the Catalyst tables.')
+    }
+    return pulls[req.params.what](store, zoho, { after: String(req.body?.after || '') })
+  }))
   // Test switch for the simulated Zoho only: pretend Zoho is unreachable.
   api.post('/dev/zoho', wrap(async (req) => {
     managerOnly(req.user)
@@ -127,4 +143,4 @@ function createApp({ store, auth = devAuth, zoho = createSimZoho() }) {
   return app
 }
 
-module.exports = { createApp }
+module.exports = { createApp, devAuth, signInNotSetUp }

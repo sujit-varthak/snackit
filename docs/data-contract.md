@@ -106,8 +106,8 @@ Codes: `NOT_FOUND`, `NOT_ALLOWED`, `INVALID_INPUT`, `BATCH_SHORT`, `STOCK_SHORT`
 | GET /zoho/status | manager, admin | Is Zoho reachable, and which mode (simulated or live) |
 | GET /zoho/head-office | manager, admin | Head-office batches: app quantity against Zoho quantity |
 | POST /dev/zoho | manager, admin | Test switch that simulates a Zoho outage (simulated mode only) |
-| POST /sync/items | admin | Pull items and batches from Zoho |
-| GET /reconciliation | manager, admin | Items where machine total differs from Zoho |
+| POST /sync/items, /sync/vendors, /sync/batches | admin | Fetch from Zoho into our tables, in that order. Body `{ after }`; answers counts, skipped rows with reasons, and `next` (call again with it until empty). Deletes nothing, writes nothing to Zoho |
+| GET /reconciliation | manager, admin | Not built yet. Items where machine total differs from Zoho |
 
 ## 5. Stock rules (the function enforces these)
 
@@ -124,9 +124,10 @@ The transfer, batch and receive calls are **Zoho Inventory** (`/inventory/v1`). 
 
 | App field | Zoho call and field | Notes |
 |---|---|---|
-| Items pull | Books `GET /items` | `item_id`, `sku` |
-| Batches pull | Inventory `GET /items/batches?item_id=` | `batch_id`, `batch_number`, `expiry_date` |
-| Locations | Books `GET /locations` | find Head Office and Vending Machine ids once |
+| Items pull | Books `GET /items` | `item_id`, `sku`, `name`, `category_name`, `ean`/`upc`, `rate`, `purchase_rate`, `status`, `product_type`. **VERIFY** Zoho's current page documents the list as `/itemmasters` |
+| Vendors pull | Books `GET /contacts?contact_type=vendor` | `contact_id`, `contact_name`, `first_name`, `last_name`, `phone`, `email`, `status`; **VERIFY** `gst_no` may be only on the single-contact call |
+| Batches pull | Inventory `GET /items/batches?item_id=&include_empty_batches=true` | `batch_id`, `batch_number`, `expiry_date`, `balance_quantity` taken from `associated_locations` for head office |
+| Locations | Books `GET /locations` | head office is found by name (`Head Office`) or `ZOHO_HEAD_OFFICE_LOCATION_ID` |
 | transfers | Inventory `POST /transferorders` | `date`, `from_location_id`, `to_location_id`, `line_items` |
 | transfer line | `line_items[{ item_id, name, quantity_transfer, batches[{ batch_id, out_quantity }] }]` | needs `zoho_batch_id`; not batch number |
 | transfer_no | `transfer_order_number` | **VERIFY** page marks it required and optional; do not rely on `reference_number` |
@@ -138,7 +139,7 @@ The transfer, batch and receive calls are **Zoho Inventory** (`/inventory/v1`). 
 
 **Modes.** `ZOHO_MODE=live` calls the real Zoho and needs `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ORG_ID` (optional `ZOHO_DC`, `ZOHO_INVENTORY_ORG_ID`). Anything else uses a simulated Zoho inside the function, so every flow can be run and tested without credentials. The live client is not yet tested against a real organisation.
 
-Limits to design for: 100 calls a minute per organisation, a daily cap by plan (1,000 Free to 10,000 Premium and above), 5 to 10 calls at once. On HTTP 429 the function waits and retries.
+Limits to design for: 100 calls a minute per organisation, a daily cap by plan (1,000 Free to 10,000 Premium and above), 5 to 10 calls at once. On HTTP 429 a read waits and is retried twice; a write is left for a retry by the user. An Advanced I/O function is stopped after 30 seconds, so a fetch works in short steps.
 
 ## 7. Placeholders waiting on the client
 
