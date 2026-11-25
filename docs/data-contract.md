@@ -13,6 +13,8 @@ Items marked **PLACEHOLDER** are waiting on a client answer. Items marked **VERI
 
 ## 2. Tables (lean design, 9 tables)
 
+**Created in Catalyst on 25 Nov 2026.** The exact structure, table ids, links and the two renamed columns (`lines` is `line_items`, `invoiced` is `is_invoiced`) are in `catalyst-database.md`. The columns below are the app's names.
+
 Catalyst adds `ROWID`, `CREATEDTIME`, `MODIFIEDTIME` to every table. Unique columns marked U.
 
 | Table | Column | Type | Notes |
