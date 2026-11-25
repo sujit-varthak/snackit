@@ -19,15 +19,25 @@ const TABLES = {
 const CATALYST = {
   columnMap: { lines: 'line_items', invoiced: 'is_invoiced' },
   links: [
-    { table: 'batches', column: 'item_id', parent: 'items', code: 'sku' },
-    { table: 'machine_stock', column: 'machine_id', parent: 'machines', code: 'machine_code' },
-    { table: 'machine_stock', column: 'batch_id', parent: 'batches', code: 'batch_key', childCode: (r) => `${r.sku}|${r.batch_no}` },
-    { table: 'transfers', column: 'machine_id', parent: 'machines', code: 'machine_code' },
-    { table: 'purchase_orders', column: 'vendor_id', parent: 'vendors', code: 'vendor_code' },
+    { table: 'batches', column: 'item_id', parent: 'items', code: 'sku', mandatory: true, onDelete: 'cascade' },
+    { table: 'machine_stock', column: 'machine_id', parent: 'machines', code: 'machine_code', mandatory: true, onDelete: 'cascade' },
+    { table: 'machine_stock', column: 'batch_id', parent: 'batches', code: 'batch_key', childCode: (r) => `${r.sku}|${r.batch_no}`, mandatory: true, onDelete: 'cascade' },
+    { table: 'transfers', column: 'machine_id', parent: 'machines', code: 'machine_code', mandatory: false, onDelete: 'setnull' },
+    { table: 'purchase_orders', column: 'vendor_id', parent: 'vendors', code: 'vendor_code', mandatory: false, onDelete: 'setnull' },
   ],
+}
+
+// Fields that are not plain text. Catalyst returns numbers and booleans as strings, so the adapter converts on read.
+const TYPES = {
+  machines: { active: 'bool' },
+  items: { cost: 'double', price: 'double' },
+  vendors: { active: 'bool' },
+  batches: { qty: 'int' },
+  machine_stock: { qty: 'int' },
+  consumption_reports: { invoiced: 'bool' },
 }
 
 const batchKey = (sku, batchNo) => `${sku}|${batchNo}`
 const stockKey = (machineCode, sku, batchNo) => `${machineCode}|${sku}|${batchNo}`
 
-module.exports = { TABLES, CATALYST, batchKey, stockKey }
+module.exports = { TABLES, CATALYST, TYPES, batchKey, stockKey }

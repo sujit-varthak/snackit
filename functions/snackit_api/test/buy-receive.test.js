@@ -3,19 +3,19 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const rules = require('../src/rules')
 const sync = require('../src/sync')
-const { createMemoryStore } = require('../src/store/memory')
+const { makeStore } = require('./helpers')
 const { createSimZoho, createZoho } = require('../src/zoho')
 const seed = require('../src/seed')
 const { createApp } = require('../src/app')
 
 const manager = { email: 'mgr@example.com', role: 'manager' }
-const setup = () => ({ store: createMemoryStore({ initial: seed }), zoho: createSimZoho({ batches: seed.batches }) })
+const setup = async () => ({ store: await makeStore(seed), zoho: createSimZoho({ batches: seed.batches }) })
 const order = (store) => rules.createPurchaseOrder(store, manager, { vendor_code: 'V-001', lines: [{ sku: 'SNK-001', qty: 100, rate: 14 }] })
 const receipt = [{ sku: 'SNK-001', batch_no: 'B-NEW', expiry: '2027-03-31', qty: 100 }]
 
 // Step 1: create the purchase order and send it to Zoho
 test('step 1: a new purchase order is saved, then sent to Zoho', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   assert.equal(po.zoho_sync, 'pending') // saved first
   const sent = await sync.syncPurchaseOrder(store, zoho, po.po_no)
@@ -26,7 +26,7 @@ test('step 1: a new purchase order is saved, then sent to Zoho', async () => {
 })
 
 test('step 1: when Zoho is down the order is kept and marked failed, and a retry sends it once', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   zoho.setDown(true)
   const po = await order(store)
   const failed = await sync.syncPurchaseOrder(store, zoho, po.po_no)
@@ -43,7 +43,7 @@ test('step 1: when Zoho is down the order is kept and marked failed, and a retry
 
 // Steps 2 and 3: receive and save the receipt
 test('steps 2 and 3: receiving adds the batch at head office and closes the order', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   await sync.syncPurchaseOrder(store, zoho, po.po_no)
   await rules.receivePurchaseOrder(store, manager, po.po_no, { receipts: receipt })
@@ -57,7 +57,7 @@ test('steps 2 and 3: receiving adds the batch at head office and closes the orde
 
 // Step 4: send the receipt to Zoho
 test('step 4: the receipt reaches Zoho and the Zoho batch id is stored', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   await sync.syncPurchaseOrder(store, zoho, po.po_no)
   await rules.receivePurchaseOrder(store, manager, po.po_no, { receipts: receipt })
@@ -68,7 +68,7 @@ test('step 4: the receipt reaches Zoho and the Zoho batch id is stored', async (
 })
 
 test('step 4: a receipt that fails stays in the app, and retrying twice adds stock to Zoho once', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   await sync.syncPurchaseOrder(store, zoho, po.po_no)
   await rules.receivePurchaseOrder(store, manager, po.po_no, { receipts: receipt })
@@ -84,7 +84,7 @@ test('step 4: a receipt that fails stays in the app, and retrying twice adds sto
 })
 
 test('step 4: if the order never reached Zoho, the receipt sends the order first', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   zoho.setDown(true)
   const po = await order(store)
   await sync.syncPurchaseOrder(store, zoho, po.po_no) // fails
@@ -98,7 +98,7 @@ test('step 4: if the order never reached Zoho, the receipt sends the order first
 })
 
 test('if Zoho got the call but our record of it was lost, resending creates nothing twice', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   const first = await sync.syncPurchaseOrder(store, zoho, po.po_no)
   await rules.receivePurchaseOrder(store, manager, po.po_no, { receipts: receipt })
@@ -112,14 +112,14 @@ test('if Zoho got the call but our record of it was lost, resending creates noth
 })
 
 test('a receipt is refused until the order has been received', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   await assert.rejects(sync.syncReceipt(store, zoho, po.po_no), (e) => e.code === 'INVALID_INPUT')
 })
 
 // Step 5: head office in the app against Zoho
 test('step 5: after a full cycle head office matches Zoho', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   await sync.syncPurchaseOrder(store, zoho, po.po_no)
   await rules.receivePurchaseOrder(store, manager, po.po_no, { receipts: receipt })
@@ -131,7 +131,7 @@ test('step 5: after a full cycle head office matches Zoho', async () => {
 })
 
 test('step 5: a received order that has not reached Zoho shows as a difference to check', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const po = await order(store)
   await sync.syncPurchaseOrder(store, zoho, po.po_no)
   await rules.receivePurchaseOrder(store, manager, po.po_no, { receipts: receipt }) // not sent
@@ -142,7 +142,7 @@ test('step 5: a received order that has not reached Zoho shows as a difference t
 })
 
 test('step 5: a transfer not yet in Zoho is explained, not flagged', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   await rules.createTransfer(store, manager, { machine_code: 'VM-004', lines: [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 25 }] })
   const row = (await sync.headOfficeComparison(store, zoho)).rows.find((r) => r.batch_no === 'B-2611-A')
   assert.equal(row.diff, -25)
@@ -150,7 +150,7 @@ test('step 5: a transfer not yet in Zoho is explained, not flagged', async () =>
 })
 
 test('step 5: when Zoho cannot be read the comparison says so', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   zoho.setDown(true)
   const c = await sync.headOfficeComparison(store, zoho)
   assert.equal(c.ok, false)
@@ -164,7 +164,7 @@ test('live Zoho refuses to start without its settings and says which are missing
 })
 
 test('the whole flow works through the API, and field staff cannot use it', async () => {
-  const { store, zoho } = setup()
+  const { store, zoho } = await setup()
   const server = createApp({ store, zoho }).listen(0)
   const base = `http://localhost:${server.address().port}/api`
   const h = { 'content-type': 'application/json', 'x-user-email': 'mgr@example.com', 'x-user-role': 'manager' }

@@ -2,21 +2,21 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const rules = require('../src/rules')
-const { createMemoryStore } = require('../src/store/memory')
+const { makeStore } = require('./helpers')
 const seed = require('../src/seed')
 const { createApp } = require('../src/app')
 
 const manager = { email: 'mgr@example.com', role: 'manager' }
 const admin = { email: 'admin@example.com', role: 'admin' }
 const ravi = { email: 'ravi@example.com', role: 'field' } // assigned to VM-001 and VM-002
-const fresh = () => createMemoryStore({ initial: seed })
+const fresh = () => makeStore(seed)
 const rejects = (promise, code) => assert.rejects(promise, (e) => e.code === code, `expected ${code}`)
 const qty = async (store, table, key, field = 'qty') => (await store.get(table, key))?.[field]
 
 // ---------- transfers ----------
 
 test('a transfer moves stock from head office to the machine', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const t = await rules.createTransfer(store, manager, { machine_code: 'VM-004', lines: [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 25 }] })
   assert.equal(t.transfer_no, 'TO-0001')
   assert.equal(t.zoho_sync, 'pending')
@@ -25,26 +25,26 @@ test('a transfer moves stock from head office to the machine', async () => {
 })
 
 test('a transfer adds to existing machine stock', async () => {
-  const store = fresh()
+  const store = (await fresh())
   await rules.createTransfer(store, manager, { machine_code: 'VM-001', lines: [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 5 }] })
   assert.equal(await qty(store, 'machine_stock', 'VM-001|SNK-001|B-2611-A'), 25)
 })
 
 test('asking for more than the batch holds is refused and changes nothing', async () => {
-  const store = fresh()
+  const store = (await fresh())
   await rejects(rules.createTransfer(store, manager, { machine_code: 'VM-004', lines: [{ sku: 'SNK-003', batch_no: 'B-2611-D', qty: 151 }] }), 'BATCH_SHORT')
   assert.equal(await qty(store, 'batches', 'SNK-003|B-2611-D'), 150)
   assert.equal((await store.list('transfers')).length, 0)
 })
 
 test('repeated lines for one batch are added up before the check', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const lines = [{ sku: 'SNK-003', batch_no: 'B-2611-D', qty: 100 }, { sku: 'SNK-003', batch_no: 'B-2611-D', qty: 100 }]
   await rejects(rules.createTransfer(store, manager, { machine_code: 'VM-004', lines }), 'BATCH_SHORT')
 })
 
 test('a failure on a later line undoes the earlier lines', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const lines = [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 10 }, { sku: 'SNK-003', batch_no: 'B-2611-D', qty: 999 }]
   await rejects(rules.createTransfer(store, manager, { machine_code: 'VM-004', lines }), 'BATCH_SHORT')
   assert.equal(await qty(store, 'batches', 'SNK-001|B-2611-A'), 400)
@@ -52,7 +52,7 @@ test('a failure on a later line undoes the earlier lines', async () => {
 })
 
 test('bad transfer input is refused', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const ok = [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 1 }]
   await rejects(rules.createTransfer(store, manager, { machine_code: 'VM-999', lines: ok }), 'NOT_FOUND')
   await rejects(rules.createTransfer(store, manager, { machine_code: 'VM-001', lines: [] }), 'INVALID_INPUT')
@@ -64,11 +64,11 @@ test('bad transfer input is refused', async () => {
 })
 
 test('field staff cannot create transfers', async () => {
-  await rejects(rules.createTransfer(fresh(), ravi, { machine_code: 'VM-001', lines: [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 1 }] }), 'NOT_ALLOWED')
+  await rejects(rules.createTransfer((await fresh()), ravi, { machine_code: 'VM-001', lines: [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 1 }] }), 'NOT_ALLOWED')
 })
 
 test('transfer numbers keep counting up', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const line = [{ sku: 'SNK-001', batch_no: 'B-2611-A', qty: 1 }]
   await rules.createTransfer(store, manager, { machine_code: 'VM-001', lines: line })
   const second = await rules.createTransfer(store, manager, { machine_code: 'VM-001', lines: line })
@@ -78,7 +78,7 @@ test('transfer numbers keep counting up', async () => {
 // ---------- consumption ----------
 
 test('consumption uses the batch that expires first', async () => {
-  const store = fresh()
+  const store = (await fresh())
   await rules.createTransfer(store, manager, { machine_code: 'VM-004', lines: [
     { sku: 'SNK-001', batch_no: 'B-2612-B', qty: 10 }, // expires 2027-04-30
     { sku: 'SNK-001', batch_no: 'B-2611-A', qty: 10 }, // expires 2027-02-15
@@ -89,7 +89,7 @@ test('consumption uses the batch that expires first', async () => {
 })
 
 test('a file asking for more than a machine holds is refused whole', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const lines = [{ machine_code: 'VM-001', sku: 'SNK-001', qty: 5 }, { machine_code: 'VM-002', sku: 'SNK-003', qty: 99 }]
   await assert.rejects(rules.applyConsumption(store, admin, { consumption_date: '2026-11-24', lines }), (e) => {
     return e.code === 'STOCK_SHORT' && e.details.errors.some((x) => x.machine_code === 'VM-002')
@@ -99,7 +99,7 @@ test('a file asking for more than a machine holds is refused whole', async () =>
 })
 
 test('unknown machine, unknown item and bad quantity are all listed', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const lines = [{ machine_code: 'VM-999', sku: 'SNK-001', qty: 1 }, { machine_code: 'VM-001', sku: 'XXX', qty: 1 }, { machine_code: 'VM-001', sku: 'SNK-001', qty: 0 }]
   const r = await rules.checkConsumption(store, admin, { consumption_date: '2026-11-24', lines })
   assert.equal(r.errors.length, 3)
@@ -107,11 +107,11 @@ test('unknown machine, unknown item and bad quantity are all listed', async () =
 })
 
 test('a bad date is refused', async () => {
-  await rejects(rules.applyConsumption(fresh(), admin, { consumption_date: '24/11/2026', lines: [{ machine_code: 'VM-001', sku: 'SNK-001', qty: 1 }] }), 'INVALID_INPUT')
+  await rejects(rules.applyConsumption((await fresh()), admin, { consumption_date: '24/11/2026', lines: [{ machine_code: 'VM-001', sku: 'SNK-001', qty: 1 }] }), 'INVALID_INPUT')
 })
 
 test('the same day cannot be applied twice without confirming', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const input = { consumption_date: '2026-11-24', lines: [{ machine_code: 'VM-001', sku: 'SNK-001', qty: 2 }] }
   await rules.applyConsumption(store, admin, input)
   await rejects(rules.applyConsumption(store, admin, input), 'DUPLICATE')
@@ -121,14 +121,14 @@ test('the same day cannot be applied twice without confirming', async () => {
 })
 
 test('field staff can only report for their own machines', async () => {
-  const store = fresh()
+  const store = (await fresh())
   await rejects(rules.applyConsumption(store, ravi, { consumption_date: '2026-11-24', lines: [{ machine_code: 'VM-003', sku: 'BEV-003', qty: 1 }] }), 'NOT_ALLOWED')
   await rules.applyConsumption(store, ravi, { consumption_date: '2026-11-24', lines: [{ machine_code: 'VM-001', sku: 'SNK-001', qty: 1 }] })
   assert.equal(await qty(store, 'machine_stock', 'VM-001|SNK-001|B-2611-A'), 19)
 })
 
 test('the preview changes nothing', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const r = await rules.checkConsumption(store, admin, { consumption_date: '2026-11-24', lines: [{ machine_code: 'VM-001', sku: 'SNK-001', qty: 3 }] })
   assert.equal(r.errors.length, 0)
   assert.equal(r.units, 3)
@@ -140,7 +140,7 @@ test('the preview changes nothing', async () => {
 const po = (store) => rules.createPurchaseOrder(store, manager, { vendor_code: 'V-001', lines: [{ sku: 'SNK-001', qty: 100, rate: 14 }] })
 
 test('receiving a purchase order adds the batch to head office', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const order = await po(store)
   assert.equal(order.po_no, 'PO-0001')
   await rules.receivePurchaseOrder(store, manager, order.po_no, { receipts: [{ sku: 'SNK-001', batch_no: 'B-NEW', expiry: '2027-12-31', qty: 100 }] })
@@ -151,7 +151,7 @@ test('receiving a purchase order adds the batch to head office', async () => {
 })
 
 test('a purchase order cannot be received twice', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const order = await po(store)
   const receipts = [{ sku: 'SNK-001', batch_no: 'B-NEW', expiry: '2027-12-31', qty: 100 }]
   await rules.receivePurchaseOrder(store, manager, order.po_no, { receipts })
@@ -160,7 +160,7 @@ test('a purchase order cannot be received twice', async () => {
 })
 
 test('a receipt needs a batch number and an expiry', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const order = await po(store)
   await rejects(rules.receivePurchaseOrder(store, manager, order.po_no, { receipts: [{ sku: 'SNK-001', batch_no: '', expiry: '2027-12-31', qty: 10 }] }), 'INVALID_INPUT')
   await rejects(rules.receivePurchaseOrder(store, manager, order.po_no, { receipts: [{ sku: 'SNK-001', batch_no: 'B-X', expiry: '', qty: 10 }] }), 'INVALID_INPUT')
@@ -170,13 +170,13 @@ test('a receipt needs a batch number and an expiry', async () => {
 })
 
 test('a batch cannot be received again with a different expiry', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const order = await po(store)
   await rejects(rules.receivePurchaseOrder(store, manager, order.po_no, { receipts: [{ sku: 'SNK-001', batch_no: 'B-2611-A', expiry: '2030-01-01', qty: 5 }] }), 'INVALID_INPUT')
 })
 
 test('purchase order input is checked', async () => {
-  const store = fresh()
+  const store = (await fresh())
   await rejects(rules.createPurchaseOrder(store, manager, { vendor_code: 'V-999', lines: [{ sku: 'SNK-001', qty: 1, rate: 1 }] }), 'NOT_FOUND')
   await rejects(rules.createPurchaseOrder(store, manager, { vendor_code: 'V-001', lines: [] }), 'INVALID_INPUT')
   await rejects(rules.createPurchaseOrder(store, manager, { vendor_code: 'V-001', lines: [{ sku: 'NOPE', qty: 1, rate: 1 }] }), 'INVALID_INPUT')
@@ -187,7 +187,7 @@ test('purchase order input is checked', async () => {
 // ---------- who sees what ----------
 
 test('field staff see only their machines and stock', async () => {
-  const store = fresh()
+  const store = (await fresh())
   const machines = await rules.visibleMachines(store, ravi)
   assert.deepEqual(machines.map((m) => m.machine_code).sort(), ['VM-001', 'VM-002'])
   const stock = await rules.stockFor(store, ravi)
@@ -197,12 +197,12 @@ test('field staff see only their machines and stock', async () => {
 })
 
 test('stock rows carry the batch expiry', async () => {
-  const rows = await rules.stockFor(fresh(), ravi, 'VM-001')
+  const rows = await rules.stockFor((await fresh()), ravi, 'VM-001')
   assert.equal(rows.find((r) => r.sku === 'SNK-001').expiry, '2027-02-15')
 })
 
 test('only admins add machines', async () => {
-  const store = fresh()
+  const store = (await fresh())
   await rejects(rules.saveMachine(store, manager, { machine_code: 'VM-006', name: 'New' }), 'NOT_ALLOWED')
   await rules.saveMachine(store, admin, { machine_code: 'VM-006', name: 'New', staff_emails: 'x@example.com' })
   assert.equal((await store.list('machines')).length, 6)
@@ -211,7 +211,7 @@ test('only admins add machines', async () => {
 // ---------- the HTTP layer ----------
 
 test('the API answers with the contract error shape and checks the login', async () => {
-  const app = createApp({ store: fresh() })
+  const app = createApp({ store: (await fresh()) })
   const server = app.listen(0)
   const base = `http://localhost:${server.address().port}`
   try {

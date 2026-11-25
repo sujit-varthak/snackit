@@ -209,6 +209,7 @@ async function applyConsumption(store, user, input) {
       consumption_date: input.consumption_date,
       uploaded_by: user.email || '',
       lines: check.merged,
+      invoiced: false, // finance sets this once the file is uploaded to Zoho invoices
     }
     await store.insert('consumption_reports', report)
     return report

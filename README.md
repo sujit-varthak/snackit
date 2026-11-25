@@ -24,7 +24,7 @@ consumption upload (xlsx/csv) with Zoho-ready download. Zoho sync is a stub.
 1. `cd functions/snackit_api && npm install && npm start` (function on http://localhost:3100, local demo data in `.local-data.json`).
 2. `cd app && npm install && npm run dev` (app on http://localhost:5173; `/api` is proxied to the function).
 3. Sign in as Admin, Manager or Field staff with the selector at the bottom of the sidebar (local stand-in for Catalyst login).
-4. Tests: `cd functions/snackit_api && npm test`.
+4. Tests: `cd functions/snackit_api && npm test` (runs on the memory store and on the Catalyst adapter over a fake). `STORE=catalyst` uses the real Catalyst tables when deployed.
 
 The committed `web/` folder (what Slate serves) is the older demo build and is not rebuilt until the function is deployed. Consumption, vendors and purchase orders still use device-only demo data until the next slice.
 

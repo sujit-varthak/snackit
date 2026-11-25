@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node scripts/run-tests.js"
   },
   "dependencies": {
     "express": "^4.21.2",

@@ -52,3 +52,13 @@ Bold columns are the link columns.
 
 The adapter maps the renamed columns in both directions, so the rules, the API and the 38 tests do not change.
 JSON columns (`line_items`, `receipts`, `zoho_lines`) hold up to 10,000 characters each.
+
+## The data adapter (`functions/snackit_api/src/store/catalyst.js`)
+
+Set `STORE=catalyst` and the function reads and writes these tables instead of the local demo data. It does the renames, fills the link columns, stores JSON as text (refusing anything over 10,000 characters), converts numbers and booleans, and undoes a failed multi-step change by replaying the inverse steps (Catalyst has no transactions).
+
+How it was checked:
+- All 48 tests pass on both the memory store and the Catalyst adapter (`npm test` runs both). The adapter runs over a fake Catalyst that copies this real structure and refuses unknown columns, bad links and duplicate keys.
+- The three ZCQL query forms the real client sends (match by value, value with an apostrophe, paged list) were run against the real tables and returned the shape the adapter expects.
+
+Not checked: the Catalyst SDK calls themselves (`catalyst-sdk.js`), because they only run inside Catalyst. They are marked VERIFY for the first deploy.
