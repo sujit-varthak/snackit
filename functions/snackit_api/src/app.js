@@ -2,6 +2,8 @@
 const express = require('express')
 const rules = require('./rules')
 const { AppError } = require('./errors')
+const sync = require('./sync')
+const { createSimZoho } = require('./zoho/sim')
 
 // Local sign-in for development: send x-user-email and x-user-role (admin, manager, field).
 // TODO(Phase 1, Catalyst): replace with Catalyst Authentication; the role must come from the login, never from the request.
@@ -14,7 +16,7 @@ function devAuth(req) {
   return { email, role }
 }
 
-function createApp({ store, auth = devAuth }) {
+function createApp({ store, auth = devAuth, zoho = createSimZoho() }) {
   const app = express()
   app.use(express.json({ limit: '2mb' }))
 
@@ -67,8 +69,42 @@ function createApp({ store, auth = devAuth }) {
   api.post('/vendors', wrap((req) => rules.saveVendor(store, req.user, req.body)))
   api.put('/vendors/:code', wrap((req) => rules.saveVendor(store, req.user, { ...req.body, vendor_code: req.params.code })))
 
-  api.post('/purchase-orders', wrap((req) => rules.createPurchaseOrder(store, req.user, req.body)))
-  api.post('/purchase-orders/:no/receive', wrap((req) => rules.receivePurchaseOrder(store, req.user, req.params.no, req.body)))
+  // Save first, send second: the order is stored, then sent to Zoho. A Zoho failure is stored on the order, not thrown.
+  api.post('/purchase-orders', wrap(async (req) => {
+    const po = await rules.createPurchaseOrder(store, req.user, req.body)
+    return sync.syncPurchaseOrder(store, zoho, po.po_no)
+  }))
+  api.post('/purchase-orders/:no/receive', wrap(async (req) => {
+    await rules.receivePurchaseOrder(store, req.user, req.params.no, req.body)
+    return sync.syncReceipt(store, zoho, req.params.no)
+  }))
+  const managerOnly = (user) => {
+    if (user.role === 'field') throw new AppError('NOT_ALLOWED', 'This is for managers and admins.')
+  }
+  api.post('/purchase-orders/:no/sync', wrap(async (req) => {
+    managerOnly(req.user)
+    return sync.syncAll(store, zoho, req.params.no)
+  }))
+  api.get('/zoho/status', wrap(async (req) => {
+    managerOnly(req.user)
+    try {
+      await zoho.ping()
+      return { mode: zoho.mode, up: true, error: '' }
+    } catch (e) {
+      return { mode: zoho.mode, up: false, error: e.message }
+    }
+  }))
+  api.get('/zoho/head-office', wrap(async (req) => {
+    managerOnly(req.user)
+    return sync.headOfficeComparison(store, zoho)
+  }))
+  // Test switch for the simulated Zoho only: pretend Zoho is unreachable.
+  api.post('/dev/zoho', wrap(async (req) => {
+    managerOnly(req.user)
+    if (zoho.mode !== 'simulated') throw new AppError('NOT_ALLOWED', 'Only the simulated Zoho can be switched off.')
+    zoho.setDown(req.body?.down)
+    return { down: zoho.isDown() }
+  }))
   api.get('/purchase-orders', wrap(async (req) => {
     if (req.user.role === 'field') throw new AppError('NOT_ALLOWED', 'Purchase orders are for managers and admins.')
     return store.list('purchase_orders')

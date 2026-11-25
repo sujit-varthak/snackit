@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
+import HeadOffice from '../HeadOffice'
 import { Gate, useLoad } from '../useLoad'
 
 const LOW = 10 // placeholder alert level; becomes a per-item setting later
@@ -66,6 +67,7 @@ export default function Dashboard() {
           )}
         </div>
       </Gate>
+      <HeadOffice />
     </>
   )
 }

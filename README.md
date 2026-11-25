@@ -27,3 +27,8 @@ consumption upload (xlsx/csv) with Zoho-ready download. Zoho sync is a stub.
 4. Tests: `cd functions/snackit_api && npm test`.
 
 The committed `web/` folder (what Slate serves) is the older demo build and is not rebuilt until the function is deployed. Consumption, vendors and purchase orders still use device-only demo data until the next slice.
+
+## Buy and receive (purchase orders, receipts, Zoho)
+Create a purchase order, receive it with batch and expiry, and see head-office stock against Zoho on the dashboard.
+Zoho runs in **simulated** mode by default (a stand-in inside the function), so every step works without credentials.
+For the real Zoho set `ZOHO_MODE=live` and `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ORG_ID` (optional `ZOHO_DC`, `ZOHO_INVENTORY_ORG_ID`). The live client is not yet tested against a real organisation.

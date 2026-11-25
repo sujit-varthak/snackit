@@ -46,6 +46,19 @@ export interface ApiStock { stock_key: string; machine_code: string; sku: string
 export interface ApiTransferLine { sku: string; batch_no: string; qty: number }
 export interface ApiTransfer { transfer_no: string; machine_code: string; transfer_date: string; lines: ApiTransferLine[]; zoho_sync: 'pending' | 'synced' | 'failed'; zoho_id: string; zoho_error: string }
 
+export interface ApiVendor { vendor_code: string; name: string; contact: string; phone: string; email: string; gstin: string; zoho_vendor_id: string; active: boolean }
+export interface ApiPoLine { sku: string; qty: number; rate: number }
+export interface ApiReceipt { sku: string; batch_no: string; expiry: string; qty: number }
+export type SyncState = 'pending' | 'synced' | 'failed' | ''
+export interface ApiPo {
+  po_no: string; vendor_code: string; po_date: string; status: 'open' | 'received'
+  lines: ApiPoLine[]; receipts: ApiReceipt[]
+  zoho_sync: SyncState; zoho_id: string; zoho_error: string
+  zoho_receipt_sync: SyncState; zoho_receipt_id: string; zoho_receipt_error: string
+}
+export interface ApiHoRow { batch_key: string; sku: string; batch_no: string; expiry: string; app_qty: number; zoho_qty: number; diff: number; status: 'match' | 'explained' | 'check'; why: string }
+export interface ApiHo { mode: 'simulated' | 'live'; fetched_at: string; ok: boolean; error?: string; rows: ApiHoRow[] }
+
 const BASE = import.meta.env.VITE_API_BASE ?? ''
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -79,5 +92,15 @@ export const api = {
   batches: () => call<ApiBatch[]>('GET', '/batches'),
   stock: (machineCode?: string) => call<ApiStock[]>('GET', `/stock${machineCode ? `?machine_code=${encodeURIComponent(machineCode)}` : ''}`),
   transfers: () => call<ApiTransfer[]>('GET', '/transfers'),
+  vendors: () => call<ApiVendor[]>('GET', '/vendors'),
+  saveVendor: (v: Partial<ApiVendor> & { name: string }) =>
+    v.vendor_code ? call<ApiVendor>('PUT', `/vendors/${encodeURIComponent(v.vendor_code)}`, v) : call<ApiVendor>('POST', '/vendors', v),
+  purchaseOrders: () => call<ApiPo[]>('GET', '/purchase-orders'),
+  createPo: (input: { vendor_code: string; lines: ApiPoLine[] }) => call<ApiPo>('POST', '/purchase-orders', input),
+  receivePo: (no: string, receipts: ApiReceipt[]) => call<ApiPo>('POST', `/purchase-orders/${encodeURIComponent(no)}/receive`, { receipts }),
+  syncPo: (no: string) => call<ApiPo>('POST', `/purchase-orders/${encodeURIComponent(no)}/sync`),
+  zohoHeadOffice: () => call<ApiHo>('GET', '/zoho/head-office'),
+  zohoStatus: () => call<{ mode: 'simulated' | 'live'; up: boolean; error: string }>('GET', '/zoho/status'),
+  devZoho: (down: boolean) => call<{ down: boolean }>('POST', '/dev/zoho', { down }),
   createTransfer: (input: { machine_code: string; lines: ApiTransferLine[] }) => call<ApiTransfer>('POST', '/transfers', input),
 }

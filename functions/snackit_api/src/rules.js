@@ -240,6 +240,10 @@ async function createPurchaseOrder(store, user, input) {
     zoho_sync: 'pending',
     zoho_id: '',
     zoho_error: '',
+    zoho_lines: [],
+    zoho_receipt_sync: '',
+    zoho_receipt_id: '',
+    zoho_receipt_error: '',
   }
   await store.insert('purchase_orders', po)
   return po
@@ -277,7 +281,14 @@ async function receivePurchaseOrder(store, user, poNo, input) {
         ? { ...existing, qty: existing.qty + r.qty }
         : { batch_key: bk, sku: r.sku, batch_no: batchNo, expiry: r.expiry, qty: r.qty, zoho_batch_id: '' })
     }
-    const updated = { ...po, status: 'received', receipts: receipts.map((r) => ({ ...r, batch_no: String(r.batch_no).trim() })) }
+    const updated = {
+      ...po,
+      status: 'received',
+      receipts: receipts.map((r) => ({ ...r, batch_no: String(r.batch_no).trim() })),
+      zoho_receipt_sync: 'pending',
+      zoho_receipt_id: '',
+      zoho_receipt_error: '',
+    }
     await store.put('purchase_orders', updated)
     return updated
   })

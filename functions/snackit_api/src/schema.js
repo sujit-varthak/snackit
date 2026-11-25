@@ -9,7 +9,7 @@ const TABLES = {
   machine_stock: { key: 'stock_key' },
   transfers: { key: 'transfer_no', json: ['lines'] },
   consumption_reports: { key: 'report_no', json: ['lines'] },
-  purchase_orders: { key: 'po_no', json: ['lines', 'receipts'] },
+  purchase_orders: { key: 'po_no', json: ['lines', 'receipts', 'zoho_lines'] },
   settings: { key: 'setting_key' },
 }
 

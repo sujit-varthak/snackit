@@ -52,7 +52,9 @@ Catalyst adds `ROWID`, `CREATEDTIME`, `MODIFIEDTIME` to every table. Unique colu
 | | po_date | date | |
 | | status | string | open, received |
 | | lines, receipts | text (JSON) | see section 3 |
-| | zoho_sync, zoho_id, zoho_error | string | |
+| | zoho_sync, zoho_id, zoho_error | string | order sent to Zoho: pending, synced, failed |
+| | zoho_lines | text (JSON) | Zoho line item ids, needed to receive the order |
+| | zoho_receipt_sync, zoho_receipt_id, zoho_receipt_error | string | receipt sent to Zoho |
 | settings | setting_key | string, U | for example high_margin_threshold_pct |
 | | setting_value | string | |
 
@@ -95,9 +97,13 @@ Codes: `NOT_FOUND`, `NOT_ALLOWED`, `INVALID_INPUT`, `BATCH_SHORT`, `STOCK_SHORT`
 | POST /consumption | any | Apply a day's report; body `{ consumption_date, lines[] }` |
 | GET /consumption | any | Reports; `GET /consumption/:no/export` gives the Zoho file |
 | GET /vendors, POST /vendors, PUT /vendors/:code | manager, admin | Vendors |
-| POST /purchase-orders | manager, admin | Create |
-| POST /purchase-orders/:no/receive | manager, admin | Receive with batch and expiry |
+| POST /purchase-orders | manager, admin | Create, then send to Zoho. A Zoho failure is stored on the order, not returned as an error |
+| POST /purchase-orders/:no/receive | manager, admin | Receive with batch and expiry, then send the receipt to Zoho (same rule) |
 | GET /purchase-orders | manager, admin | List |
+| POST /purchase-orders/:no/sync | manager, admin | Resend the order, and its receipt if received, to Zoho |
+| GET /zoho/status | manager, admin | Is Zoho reachable, and which mode (simulated or live) |
+| GET /zoho/head-office | manager, admin | Head-office batches: app quantity against Zoho quantity |
+| POST /dev/zoho | manager, admin | Test switch that simulates a Zoho outage (simulated mode only) |
 | POST /sync/items | admin | Pull items and batches from Zoho |
 | GET /reconciliation | manager, admin | Items where machine total differs from Zoho |
 
@@ -127,6 +133,8 @@ The transfer, batch and receive calls are **Zoho Inventory** (`/inventory/v1`). 
 | purchase_orders | Books `POST /purchaseorders` | `vendor_id`, `line_items[{ item_id, rate, quantity, location_id }]` |
 | receipts | Inventory `POST /purchasereceives?purchaseorder_id=` | `line_items[{ line_item_id, quantity, batches[{ batch_number, quantity_in, expiry_date }] }]`; `line_item_id` comes from the purchase order response |
 | Consumption file | Finance upload to Zoho invoices | **VERIFY** Inventory invoices need `batch_id` per line; our file has none |
+
+**Modes.** `ZOHO_MODE=live` calls the real Zoho and needs `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ORG_ID` (optional `ZOHO_DC`, `ZOHO_INVENTORY_ORG_ID`). Anything else uses a simulated Zoho inside the function, so every flow can be run and tested without credentials. The live client is not yet tested against a real organisation.
 
 Limits to design for: 100 calls a minute per organisation, a daily cap by plan (1,000 Free to 10,000 Premium and above), 5 to 10 calls at once. On HTTP 429 the function waits and retries.
 

@@ -8,5 +8,8 @@ if (process.env.STORE === 'catalyst') {
   throw new Error('The Catalyst Data Store adapter is not built yet. Use STORE=memory for now.')
 }
 
-const store = createMemoryStore({ initial: require('./src/seed') })
-module.exports = createApp({ store })
+const { createZoho } = require('./src/zoho')
+const seed = require('./src/seed')
+
+const store = createMemoryStore({ initial: seed })
+module.exports = createApp({ store, zoho: createZoho(process.env, { batches: seed.batches }) })
