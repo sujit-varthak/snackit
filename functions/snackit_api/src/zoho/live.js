@@ -145,6 +145,20 @@ function createLiveZoho(env, { fetch: send = globalThis.fetch, retryMs = 2000, o
     throw new AppError('ZOHO_ERROR', `Zoho did not say which location batch ${batch.batch_number} is in, so the head-office quantity cannot be worked out.`)
   }
 
+  // The one Zoho location every machine belongs to. Set ZOHO_VENDING_LOCATION_ID, or name it (default "Vending Machine").
+  let vendingLocation
+  async function vendingLocationId() {
+    if (env.ZOHO_VENDING_LOCATION_ID) return env.ZOHO_VENDING_LOCATION_ID
+    if (vendingLocation) return vendingLocation
+    const locations = await listLocations()
+    const wanted = text(env.ZOHO_VENDING_LOCATION_NAME || 'Vending Machine').toLowerCase()
+    const hit = locations.find((l) => l.name.toLowerCase() === wanted)
+    if (!hit) {
+      throw new AppError('ZOHO_ERROR', `Zoho has no location called "${wanted}". Create it in Zoho, or set ZOHO_VENDING_LOCATION_ID to one of: ${locations.map((l) => `${l.name} (${l.location_id})`).join(', ')}.`)
+    }
+    return (vendingLocation = hit.location_id)
+  }
+
   async function itemIdsBySku() {
     return new Map((await listItems()).filter((i) => i.sku).map((i) => [i.sku, i.zoho_item_id]))
   }
@@ -200,6 +214,40 @@ function createLiveZoho(env, { fetch: send = globalThis.fetch, retryMs = 2000, o
       const order = d.purchaseorder
       // Zoho returns the lines in the order sent; pair them with our SKUs.
       return { purchaseorder_id: order.purchaseorder_id, line_ids: (order.line_items || []).map((li, i) => ({ sku: po.lines[i]?.sku, line_item_id: li.line_item_id })) }
+    },
+
+    // Main warehouse to the one Vending Machine location, with the machine code in a custom field (Inventory API).
+    // VERIFY on first use: the lookup by number, ignore_auto_number_generation, and whether Zoho records the transfer as
+    // done or in transit (if in transit, a "mark as received" call must follow before the Vending Machine location rises).
+    async createTransferOrder({ transfer, lines }) {
+      if (!env.ZOHO_MACHINE_FIELD_ID) {
+        throw new AppError('ZOHO_ERROR', 'Set ZOHO_MACHINE_FIELD_ID to the id of the "Vending Machine" custom field on Zoho transfer orders (see docs/connect.md).')
+      }
+      const from = await headOfficeId()
+      if (!from) throw new AppError('ZOHO_ERROR', 'Zoho has only one location. Create a "Vending Machine" location in Zoho first: a transfer needs two.')
+      const to = await vendingLocationId()
+      for (const l of lines) {
+        if (!l.item?.zoho_item_id) throw new AppError('ZOHO_ERROR', `${l.sku} has no Zoho item id. Run "Fetch from Zoho" first.`)
+        if (!l.batch?.zoho_batch_id) throw new AppError('ZOHO_ERROR', `Batch ${l.batch_no} of ${l.sku} has no Zoho batch id. Run "Fetch from Zoho" for batches first.`)
+      }
+      const found = await inv('GET', '/transferorders', { query: { transfer_order_number: transfer.transfer_no } })
+      const hit = (found.transfer_orders || []).find((o) => text(o.transfer_order_number) === transfer.transfer_no)
+      if (hit) return { transfer_order_id: text(hit.transfer_order_id) } // a retry finds the order instead of making a second
+      const body = {
+        transfer_order_number: transfer.transfer_no,
+        date: transfer.transfer_date,
+        from_location_id: from,
+        to_location_id: to,
+        line_items: lines.map((l) => ({
+          item_id: l.item.zoho_item_id,
+          name: l.item.name,
+          quantity_transfer: l.qty,
+          batches: [{ batch_id: l.batch.zoho_batch_id, out_quantity: l.qty }],
+        })),
+        custom_fields: [{ customfield_id: env.ZOHO_MACHINE_FIELD_ID, value: transfer.machine_code }],
+      }
+      const d = await inv('POST', '/transferorders', { query: { ignore_auto_number_generation: true }, body })
+      return { transfer_order_id: text(d.transfer_order?.transfer_order_id) }
     },
 
     async receivePurchaseOrder({ po, receipts }) {

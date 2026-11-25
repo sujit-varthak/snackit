@@ -52,6 +52,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/transfers" element={<Transfers />} />
           <Route path="/transfers/new" element={<NewTransfer />} />
+          <Route path="/transfers/:no/edit" element={<NewTransfer />} />
           <Route path="/consumption" element={<Consumption />} />
           <Route path="/machines" element={<Machines />} />
           <Route path="/vendors" element={<Vendors />} />

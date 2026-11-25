@@ -60,6 +60,27 @@ async function syncAll(store, zoho, poNo) {
   return po
 }
 
+// Sends a transfer to Zoho: Main warehouse to the one Vending Machine location, machine code in a custom field.
+// The Zoho item and batch ids come from our tables, which "Fetch from Zoho" fills.
+async function syncTransfer(store, zoho, no) {
+  const transfer = await store.get('transfers', no)
+  if (!transfer) throw new AppError('NOT_FOUND', `Transfer ${no} not found.`)
+  if (transfer.zoho_sync === 'synced') return transfer
+  try {
+    const items = new Map((await store.list('items')).map((i) => [i.sku, i]))
+    const batches = new Map((await store.list('batches')).map((b) => [b.batch_key, b]))
+    const lines = transfer.lines.map((l) => ({ ...l, item: items.get(l.sku), batch: batches.get(batchKey(l.sku, l.batch_no)) }))
+    const r = await zoho.createTransferOrder({ transfer, lines })
+    const done = { ...transfer, zoho_sync: 'synced', zoho_id: r.transfer_order_id || '', zoho_error: '' }
+    await store.put('transfers', done)
+    return done
+  } catch (e) {
+    const failed = { ...transfer, zoho_sync: 'failed', zoho_error: e.message }
+    await store.put('transfers', failed)
+    return failed
+  }
+}
+
 // Head-office stock as the app holds it, next to what Zoho reports.
 // A transfer that is not yet in Zoho lowers the app but not Zoho, so that difference is explained.
 async function headOfficeComparison(store, zoho) {
@@ -97,4 +118,4 @@ async function headOfficeComparison(store, zoho) {
   return { ...base, ok: true, rows }
 }
 
-module.exports = { syncPurchaseOrder, syncReceipt, syncAll, headOfficeComparison }
+module.exports = { syncPurchaseOrder, syncReceipt, syncAll, syncTransfer, headOfficeComparison }

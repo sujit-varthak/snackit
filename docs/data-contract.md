@@ -94,7 +94,10 @@ Codes: `NOT_FOUND`, `NOT_ALLOWED`, `INVALID_INPUT`, `BATCH_SHORT`, `STOCK_SHORT`
 | GET /stock?machine_code= | any | Machine stock, limited to the user's machines |
 | POST /transfers | manager, admin | Create a transfer; body `{ machine_code, lines[] }` |
 | GET /transfers | any | History, limited to the user's machines |
-| POST /transfers/:no/sync | manager, admin | Send or resend to Zoho |
+| PUT /transfers/:no | manager, admin | Change a transfer not yet in Zoho: old stock goes back to head office, new stock moves |
+| DELETE /transfers/:no | manager, admin | Delete a transfer not yet in Zoho: its stock goes back to head office |
+| POST /transfers/:no/sync | manager, admin | Export to Zoho: main warehouse to the Vending Machine location, machine in a custom field |
+| DELETE /machines/:code | admin | Only when the machine holds no stock and has no history |
 | POST /consumption/preview | any | Validate a file's rows; applies nothing |
 | POST /consumption | any | Apply a day's report; body `{ consumption_date, lines[] }` |
 | GET /consumption | any | Reports; `GET /consumption/:no/export` gives the Zoho file |

@@ -57,20 +57,51 @@ async function stockFor(store, user, machineCode) {
 
 // ---------- machines and vendors ----------
 
-async function saveMachine(store, user, input) {
+// Adds a machine (create) or changes one (update). The machine code never changes: it is in the stock, the history and Zoho.
+async function saveMachine(store, user, input, { create = false } = {}) {
   requireRole(user, 'admin')
-  if (!input?.machine_code || !input?.name) throw new AppError('INVALID_INPUT', 'machine_code and name are required.')
+  const code = String(input?.machine_code ?? '').trim()
+  if (!code) throw new AppError('INVALID_INPUT', 'A machine code is required, for example VM-006.')
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(code)) throw new AppError('INVALID_INPUT', 'The machine code may use letters, numbers, - and _ only (up to 50).')
+  if (!String(input?.name ?? '').trim()) throw new AppError('INVALID_INPUT', 'A machine name is required.')
+  const existing = await store.get('machines', code)
+  if (create && existing) throw new AppError('DUPLICATE', `Machine ${code} already exists.`)
+  if (!create && !existing) throw new AppError('NOT_FOUND', `Machine ${code} not found.`)
+  const emails = String(input.staff_emails ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+  const bad = emails.filter((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+  if (bad.length) throw new AppError('INVALID_INPUT', `These are not email addresses: ${bad.join(', ')}`)
   const row = {
-    machine_code: String(input.machine_code).trim(),
+    machine_code: code,
     name: String(input.name).trim(),
-    location: input.location || '',
-    area: input.area || '',
-    custodian: input.custodian || '',
-    staff_emails: input.staff_emails || '',
+    location: String(input.location ?? '').trim(),
+    area: String(input.area ?? '').trim(),
+    custodian: String(input.custodian ?? '').trim(),
+    staff_emails: emails.join(', '),
     active: input.active !== false,
   }
-  await store.put('machines', row)
+  if (create) await store.insert('machines', row)
+  else await store.put('machines', row)
   return row
+}
+
+// Deletes a machine only when nothing depends on it. Otherwise it should be marked inactive, which keeps its history.
+async function deleteMachine(store, user, code) {
+  requireRole(user, 'admin')
+  const machine = await store.get('machines', code)
+  if (!machine) throw new AppError('NOT_FOUND', `Machine ${code} not found.`)
+  const stock = await store.list('machine_stock', (r) => r.machine_code === code)
+  const units = stock.reduce((s, r) => s + r.qty, 0)
+  if (units > 0) throw new AppError('INVALID_INPUT', `${code} still holds ${units} units. Consume or move them first, or mark the machine inactive.`)
+  const transfers = (await store.list('transfers', (t) => t.machine_code === code)).length
+  const reports = (await store.list('consumption_reports', (r) => r.lines.some((l) => l.machine_code === code))).length
+  if (transfers || reports) {
+    throw new AppError('INVALID_INPUT', `${code} has history (${transfers} transfers, ${reports} consumption reports). Mark it inactive instead, so the history stays.`)
+  }
+  await store.transaction(async () => {
+    for (const r of stock) await store.remove('machine_stock', r.stock_key) // empty rows only
+    await store.remove('machines', code)
+  })
+  return { deleted: code }
 }
 
 async function saveVendor(store, user, input) {
@@ -98,8 +129,8 @@ async function saveVendor(store, user, input) {
 
 // ---------- transfers ----------
 
-async function createTransfer(store, user, input) {
-  requireRole(user, 'admin', 'manager')
+// Checks the machine and lines of a new or changed transfer. Changes nothing.
+async function prepareTransfer(store, input) {
   const machine = await store.get('machines', input?.machine_code)
   if (!machine) throw new AppError('NOT_FOUND', `Machine ${input?.machine_code} not found.`)
   if (!machine.active) throw new AppError('INVALID_INPUT', `Machine ${machine.machine_code} is inactive.`)
@@ -109,24 +140,85 @@ async function createTransfer(store, user, input) {
     if (!l.sku || !l.batch_no) throw new AppError('INVALID_INPUT', 'Every line needs an item and a batch.', { line: l })
     if (!isQty(l.qty)) throw new AppError('INVALID_INPUT', `Quantity for ${l.sku} must be a whole number above 0.`, { line: l })
   }
-  const merged = mergeLines(lines, (l) => batchKey(l.sku, l.batch_no))
+  return { machine, merged: mergeLines(lines, (l) => batchKey(l.sku, l.batch_no)) }
+}
+
+// Moves stock from head-office batches into the machine. Call inside a transaction.
+async function moveToMachine(store, machine, merged) {
+  for (const l of merged) {
+    const batch = await store.get('batches', batchKey(l.sku, l.batch_no))
+    if (!batch) throw new AppError('NOT_FOUND', `Batch ${l.batch_no} not found for ${l.sku}.`)
+    if (l.qty > batch.qty) {
+      throw new AppError('BATCH_SHORT', `Batch ${l.batch_no} has ${batch.qty} available (requested ${l.qty}).`, {
+        sku: l.sku, batch_no: l.batch_no, available: batch.qty, requested: l.qty,
+      })
+    }
+    await store.put('batches', { ...batch, qty: batch.qty - l.qty })
+    const sk = stockKey(machine.machine_code, l.sku, l.batch_no)
+    const row = (await store.get('machine_stock', sk)) || {
+      stock_key: sk, machine_code: machine.machine_code, sku: l.sku, batch_no: l.batch_no, qty: 0,
+    }
+    await store.put('machine_stock', { ...row, qty: row.qty + l.qty })
+  }
+}
+
+// Puts a transfer's stock back from the machine into head office. Refused if part of it has already been consumed.
+async function moveBackToHeadOffice(store, transfer) {
+  for (const l of transfer.lines) {
+    const sk = stockKey(transfer.machine_code, l.sku, l.batch_no)
+    const row = await store.get('machine_stock', sk)
+    const have = row ? row.qty : 0
+    if (have < l.qty) {
+      throw new AppError('STOCK_SHORT', `${transfer.machine_code} now holds ${have} of ${l.sku} batch ${l.batch_no}, but this transfer put ${l.qty} there. Some has been consumed, so the transfer can no longer be changed.`, {
+        machine_code: transfer.machine_code, sku: l.sku, batch_no: l.batch_no, available: have, requested: l.qty,
+      })
+    }
+    if (have === l.qty) await store.remove('machine_stock', sk)
+    else await store.put('machine_stock', { ...row, qty: have - l.qty })
+    const batch = await store.get('batches', batchKey(l.sku, l.batch_no))
+    if (!batch) throw new AppError('NOT_FOUND', `Batch ${l.batch_no} of ${l.sku} no longer exists at head office.`)
+    await store.put('batches', { ...batch, qty: batch.qty + l.qty })
+  }
+}
+
+// A transfer that is already in Zoho is fixed here: changing it would make the two disagree.
+async function editableTransfer(store, user, no) {
+  requireRole(user, 'admin', 'manager')
+  const transfer = await store.get('transfers', no)
+  if (!transfer) throw new AppError('NOT_FOUND', `Transfer ${no} not found.`)
+  if (transfer.zoho_sync === 'synced') {
+    throw new AppError('INVALID_INPUT', `${no} is already in Zoho, so it cannot be changed or deleted here. Correct it with a new transfer.`)
+  }
+  return transfer
+}
+
+async function updateTransfer(store, user, no, input) {
+  const transfer = await editableTransfer(store, user, no)
+  const { machine, merged } = await prepareTransfer(store, input)
+  return store.transaction(async () => {
+    await moveBackToHeadOffice(store, transfer)
+    await moveToMachine(store, machine, merged)
+    const updated = { ...transfer, machine_code: machine.machine_code, lines: merged, zoho_sync: 'pending', zoho_error: '' }
+    await store.put('transfers', updated)
+    return updated
+  })
+}
+
+async function deleteTransfer(store, user, no) {
+  const transfer = await editableTransfer(store, user, no)
+  return store.transaction(async () => {
+    await moveBackToHeadOffice(store, transfer)
+    await store.remove('transfers', no)
+    return { deleted: no }
+  })
+}
+
+async function createTransfer(store, user, input) {
+  requireRole(user, 'admin', 'manager')
+  const { machine, merged } = await prepareTransfer(store, input)
 
   return store.transaction(async () => {
-    for (const l of merged) {
-      const batch = await store.get('batches', batchKey(l.sku, l.batch_no))
-      if (!batch) throw new AppError('NOT_FOUND', `Batch ${l.batch_no} not found for ${l.sku}.`)
-      if (l.qty > batch.qty) {
-        throw new AppError('BATCH_SHORT', `Batch ${l.batch_no} has ${batch.qty} available (requested ${l.qty}).`, {
-          sku: l.sku, batch_no: l.batch_no, available: batch.qty, requested: l.qty,
-        })
-      }
-      await store.put('batches', { ...batch, qty: batch.qty - l.qty })
-      const sk = stockKey(machine.machine_code, l.sku, l.batch_no)
-      const row = (await store.get('machine_stock', sk)) || {
-        stock_key: sk, machine_code: machine.machine_code, sku: l.sku, batch_no: l.batch_no, qty: 0,
-      }
-      await store.put('machine_stock', { ...row, qty: row.qty + l.qty })
-    }
+    await moveToMachine(store, machine, merged)
     const transfer = {
       transfer_no: await nextNumber(store, 'transfers', 'TO'),
       machine_code: machine.machine_code,
@@ -297,8 +389,8 @@ async function receivePurchaseOrder(store, user, poNo, input) {
 
 module.exports = {
   canSeeMachine, visibleMachines, stockFor,
-  saveMachine, saveVendor,
-  createTransfer,
+  saveMachine, deleteMachine, saveVendor,
+  createTransfer, updateTransfer, deleteTransfer,
   checkConsumption, applyConsumption,
   createPurchaseOrder, receivePurchaseOrder,
 }

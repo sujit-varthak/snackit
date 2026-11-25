@@ -41,8 +41,9 @@ function createApp({ store, auth = devAuth, zoho = createSimZoho(), allowSimulat
   api.get('/me', wrap(async (req) => ({ ...req.user, machines: (await rules.visibleMachines(store, req.user)).map((m) => m.machine_code) })))
 
   api.get('/machines', wrap((req) => rules.visibleMachines(store, req.user)))
-  api.post('/machines', wrap((req) => rules.saveMachine(store, req.user, req.body)))
+  api.post('/machines', wrap((req) => rules.saveMachine(store, req.user, req.body, { create: true })))
   api.put('/machines/:code', wrap((req) => rules.saveMachine(store, req.user, { ...req.body, machine_code: req.params.code })))
+  api.delete('/machines/:code', wrap((req) => rules.deleteMachine(store, req.user, req.params.code)))
 
   api.get('/items', wrap(() => store.list('items')))
   api.get('/batches', wrap(async (req) => {
@@ -52,6 +53,14 @@ function createApp({ store, auth = devAuth, zoho = createSimZoho(), allowSimulat
   api.get('/stock', wrap((req) => rules.stockFor(store, req.user, req.query.machine_code)))
 
   api.post('/transfers', wrap((req) => rules.createTransfer(store, req.user, req.body)))
+  // Change or delete a transfer that is not yet in Zoho; its stock moves back to head office first.
+  api.put('/transfers/:no', wrap((req) => rules.updateTransfer(store, req.user, req.params.no, req.body)))
+  api.delete('/transfers/:no', wrap((req) => rules.deleteTransfer(store, req.user, req.params.no)))
+  // Export to Zoho: Main warehouse to the one Vending Machine location, with the machine in a custom field.
+  api.post('/transfers/:no/sync', wrap(async (req) => {
+    if (req.user.role === 'field') throw new AppError('NOT_ALLOWED', 'This is for managers and admins.')
+    return sync.syncTransfer(store, zoho, req.params.no)
+  }))
   api.get('/transfers', wrap(async (req) => {
     const ok = new Set((await rules.visibleMachines(store, req.user)).map((m) => m.machine_code))
     return store.list('transfers', (t) => ok.has(t.machine_code))

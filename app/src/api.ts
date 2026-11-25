@@ -108,6 +108,12 @@ export const api = {
   zohoStatus: () => call<{ mode: 'simulated' | 'live'; up: boolean; error: string }>('GET', '/zoho/status'),
   devZoho: (down: boolean) => call<{ down: boolean }>('POST', '/dev/zoho', { down }),
   createTransfer: (input: { machine_code: string; lines: ApiTransferLine[] }) => call<ApiTransfer>('POST', '/transfers', input),
+  updateTransfer: (no: string, input: { machine_code: string; lines: ApiTransferLine[] }) => call<ApiTransfer>('PUT', `/transfers/${encodeURIComponent(no)}`, input),
+  deleteTransfer: (no: string) => call<{ deleted: string }>('DELETE', `/transfers/${encodeURIComponent(no)}`),
+  exportTransfer: (no: string) => call<ApiTransfer>('POST', `/transfers/${encodeURIComponent(no)}/sync`),
+  createMachine: (m: ApiMachine) => call<ApiMachine>('POST', '/machines', m),
+  updateMachine: (m: ApiMachine) => call<ApiMachine>('PUT', `/machines/${encodeURIComponent(m.machine_code)}`, m),
+  deleteMachine: (code: string) => call<{ deleted: string }>('DELETE', `/machines/${encodeURIComponent(code)}`),
   consumption: () => call<ApiReport[]>('GET', '/consumption'),
   previewConsumption: (input: { consumption_date: string; lines: ApiConsumptionLine[] }) =>
     call<{ ok: boolean; errors: ApiRowError[]; units: number }>('POST', '/consumption/preview', input),

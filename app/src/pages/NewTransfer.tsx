@@ -1,27 +1,49 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, getRole } from '../api'
 import { HIGH_MARGIN_THRESHOLD_PCT, isHighMargin, marginPct } from '../margin'
 import { Gate, useLoad } from '../useLoad'
 
 interface Line { key: number; sku: string; batch: string; qty: string }
 
+// Creates a transfer, or edits one at /transfers/:no/edit.
 export default function NewTransfer() {
+  const { no } = useParams()
+  const editing = Boolean(no)
   const role = getRole()
   const machines = useLoad(() => api.machines())
   const items = useLoad(() => api.items())
   const batches = useLoad(() => (role === 'field' ? Promise.resolve([]) : api.batches()))
+  const transfers = useLoad(() => (editing ? api.transfers() : Promise.resolve([])))
   const nav = useNavigate()
   const [machineCode, setMachineCode] = useState('')
   const [lines, setLines] = useState<Line[]>([])
+  const [prefilled, setPrefilled] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [cat, setCat] = useState('')
   const [sub, setSub] = useState('')
 
+  const original = editing ? transfers.data?.find((t) => t.transfer_no === no) : undefined
+
+  // Fill the form once with the transfer being edited.
+  useEffect(() => {
+    if (!original || prefilled) return
+    setMachineCode(original.machine_code)
+    setLines(original.lines.map((l, i) => ({ key: i, sku: l.sku, batch: l.batch_no, qty: String(l.qty) })))
+    setPrefilled(true)
+  }, [original, prefilled])
+
   const itemList = items.data ?? []
+  // While editing, the stock this transfer already took goes back to head office on save, so it counts as available.
+  const giveBack = (sku: string, batchNo: string) =>
+    (original?.lines ?? []).filter((l) => l.sku === sku && l.batch_no === batchNo).reduce((s, l) => s + l.qty, 0)
   const batchesFor = (sku: string) =>
-    (batches.data ?? []).filter((b) => b.sku === sku && b.qty > 0).sort((a, b) => a.expiry.localeCompare(b.expiry)) // earliest expiry first
+    (batches.data ?? [])
+      .filter((b) => b.sku === sku)
+      .map((b) => ({ ...b, qty: b.qty + giveBack(b.sku, b.batch_no) }))
+      .filter((b) => b.qty > 0)
+      .sort((a, b) => a.expiry.localeCompare(b.expiry)) // earliest expiry first
 
   const addLine = (sku = '') => {
     const first = sku ? batchesFor(sku)[0] : undefined
@@ -31,25 +53,21 @@ export default function NewTransfer() {
 
   const categories = [...new Set(itemList.map((i) => i.category))]
   const subs = [...new Set(itemList.filter((i) => !cat || i.category === cat).map((i) => i.subcategory))]
-
-  const suggestions = useMemo(
-    () =>
-      itemList
-        .filter((i) => isHighMargin(i) && (batches.data ?? []).some((b) => b.sku === i.sku && b.qty > 0) && !lines.some((l) => l.sku === i.sku))
-        .filter((i) => !cat || i.category === cat)
-        .filter((i) => !sub || i.subcategory === sub)
-        .sort((a, b) => marginPct(b) - marginPct(a)),
-    [itemList, batches.data, lines, cat, sub],
-  )
+  const suggestions = itemList
+    .filter((i) => isHighMargin(i) && batchesFor(i.sku).length > 0 && !lines.some((l) => l.sku === i.sku))
+    .filter((i) => (!cat || i.category === cat) && (!sub || i.subcategory === sub))
+    .sort((a, b) => marginPct(b) - marginPct(a))
 
   const submit = async () => {
     setError('')
-    const payload = lines
-      .filter((l) => l.sku || l.batch || l.qty)
-      .map((l) => ({ sku: l.sku, batch_no: l.batch, qty: Number(l.qty) }))
+    const payload = {
+      machine_code: machineCode,
+      lines: lines.filter((l) => l.sku || l.batch || l.qty).map((l) => ({ sku: l.sku, batch_no: l.batch, qty: Number(l.qty) })),
+    }
     setBusy(true)
     try {
-      await api.createTransfer({ machine_code: machineCode, lines: payload })
+      if (editing && no) await api.updateTransfer(no, payload)
+      else await api.createTransfer(payload)
       nav('/transfers')
     } catch (e) {
       setError(e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong.')
@@ -59,25 +77,36 @@ export default function NewTransfer() {
     }
   }
 
+  const title = editing ? `Edit Transfer ${no}` : 'New Transfer Order'
   if (role === 'field') {
     return (
       <>
-        <h2>New Transfer Order</h2>
+        <h2>{title}</h2>
         <div className="card"><p className="err">Transfer orders are for managers and admins. Switch role in the sidebar to try it.</p></div>
       </>
     )
   }
+  if (editing && transfers.data && !original) {
+    return <><h2>{title}</h2><div className="card"><p className="err">Transfer {no} was not found.</p></div></>
+  }
+  if (original?.zoho_sync === 'synced') {
+    return <><h2>{title}</h2><div className="card"><p className="err">{no} is already in Zoho, so it cannot be changed here. Correct it with a new transfer.</p></div></>
+  }
 
   return (
     <>
-      <h2>New Transfer Order</h2>
-      <p className="sub">Head office → vending machine. Stock is checked on the server before anything moves.</p>
-      <Gate states={[machines, items, batches]}>
+      <h2>{title}</h2>
+      <p className="sub">
+        {editing
+          ? 'Saving puts the old quantities back at head office, then moves the new ones. Refused if the machine has already consumed some of this stock.'
+          : 'Head office → vending machine. Stock is checked on the server before anything moves.'}
+      </p>
+      <Gate states={[machines, items, batches, transfers]}>
         <div className="card">
           <div className="row">
             <select value={machineCode} onChange={(e) => setMachineCode(e.target.value)}>
               <option value="">Select vending machine…</option>
-              {(machines.data ?? []).map((m) => <option key={m.machine_code} value={m.machine_code}>{m.machine_code} · {m.location}</option>)}
+              {(machines.data ?? []).filter((m) => m.active || m.machine_code === machineCode).map((m) => <option key={m.machine_code} value={m.machine_code}>{m.machine_code} · {m.location}</option>)}
             </select>
             <select value={cat} onChange={(e) => { setCat(e.target.value); setSub('') }}>
               <option value="">All categories</option>
@@ -132,7 +161,8 @@ export default function NewTransfer() {
             <button onClick={() => addLine()}>+ Add line</button>
             <span className="spacer" />
             {error && <span className="err">{error}</span>}
-            <button className="primary" disabled={busy} onClick={submit}>{busy ? 'Creating…' : 'Create transfer order'}</button>
+            {editing && <button onClick={() => nav('/transfers')}>Cancel</button>}
+            <button className="primary" disabled={busy} onClick={submit}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Create transfer order'}</button>
           </div>
         </div>
       </Gate>

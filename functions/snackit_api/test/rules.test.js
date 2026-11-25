@@ -203,8 +203,8 @@ test('stock rows carry the batch expiry', async () => {
 
 test('only admins add machines', async () => {
   const store = (await fresh())
-  await rejects(rules.saveMachine(store, manager, { machine_code: 'VM-006', name: 'New' }), 'NOT_ALLOWED')
-  await rules.saveMachine(store, admin, { machine_code: 'VM-006', name: 'New', staff_emails: 'x@example.com' })
+  await rejects(rules.saveMachine(store, manager, { machine_code: 'VM-006', name: 'New' }, { create: true }), 'NOT_ALLOWED')
+  await rules.saveMachine(store, admin, { machine_code: 'VM-006', name: 'New', staff_emails: 'x@example.com' }, { create: true })
   assert.equal((await store.list('machines')).length, 6)
 })
 

@@ -10,6 +10,8 @@ function createSimZoho({ batches = [], items = [], vendors = [] } = {}) {
   const id = (p) => `${p}${next++}`
   const orders = new Map() // po_no -> { purchaseorder_id, line_ids }
   const receives = new Map() // po_no -> { receive_id, batches }
+  const transfers = new Map() // transfer_no -> { transfer_order_id, machine }
+  const vending = new Map() // sku -> quantity at the Vending Machine location
   const itemList = items.map((i, n) => ({
     zoho_item_id: `SIM-I-${n + 1}`, sku: i.sku, name: i.name, category: i.category, barcode: i.barcode, cost: i.cost, price: i.price, active: true, goods: true,
   }))
@@ -71,6 +73,25 @@ function createSimZoho({ batches = [], items = [], vendors = [] } = {}) {
       receives.set(po.po_no, rec)
       return rec
     },
+    // Main warehouse to the one Vending Machine location. Zoho's head-office stock drops; the machine is only a label.
+    async createTransferOrder({ transfer, lines }) {
+      guard()
+      if (transfers.has(transfer.transfer_no)) return transfers.get(transfer.transfer_no) // a retry never moves stock twice
+      for (const l of lines) {
+        const b = stock.get(`${l.sku}|${l.batch_no}`)
+        if (!b) throw new AppError('ZOHO_ERROR', `Zoho has no batch ${l.batch_no} of ${l.sku} at the main warehouse.`)
+        if (b.qty < l.qty) throw new AppError('ZOHO_ERROR', `Zoho's main warehouse holds ${b.qty} of ${l.sku} batch ${l.batch_no}, not ${l.qty}.`)
+      }
+      for (const l of lines) {
+        stock.get(`${l.sku}|${l.batch_no}`).qty -= l.qty
+        vending.set(l.sku, (vending.get(l.sku) || 0) + l.qty)
+      }
+      const rec = { transfer_order_id: id('TO'), machine: transfer.machine_code }
+      transfers.set(transfer.transfer_no, rec)
+      return rec
+    },
+    // What the one Vending Machine location holds, per item (test helper).
+    vendingStock: () => Object.fromEntries(vending),
     // Head-office batches as Zoho holds them; pass items to read only those.
     async listBatches(wanted) {
       guard()

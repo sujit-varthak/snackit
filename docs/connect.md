@@ -42,6 +42,24 @@ A purchase order you create or receive while `ZOHO_MODE=live` **is sent to the r
 - Zoho allows 100 calls a minute and a daily number by plan. Batches cost at least one call per item. If the limit is reached, what was fetched is kept; fetch again later.
 - The dashboard's "app against Zoho" panel also reads batches for every item each time it opens. With a large item list that uses up the limit quickly.
 
+### Exporting transfer orders to Zoho
+
+Decided on 25 Nov 2026, following the 23 Nov meeting: Zoho has **one** location for all machines. Every exported transfer goes **Main warehouse → Vending Machine**, and the machine (VM-001, VM-002, ...) is written into a custom field on the transfer. Zoho's Destination dropdown only lists Zoho locations, so machines are not in that dropdown; they are in the field.
+
+Set up Zoho once:
+
+1. **Locations.** Zoho must have two locations: the main warehouse (already there) and one called **Vending Machine**. A transfer needs two different locations.
+2. **Machine field.** Zoho Inventory → Settings → Preferences → Transfer Orders → Field Customization → New custom field, label **Vending Machine**.
+   - *Dropdown*: Zoho users can pick and filter by machine, but every machine code must also be added as an option there. When you add a machine in the app, add its code to this dropdown too, or Zoho refuses the export and the app shows why.
+   - *Text*: nothing to keep up; the app always fills it. Filtering works by search instead of a list.
+3. **Field id.** Open the field and copy its id (or read it with the API); put it in `.env` as `ZOHO_MACHINE_FIELD_ID`.
+4. **Scopes.** Add `ZohoInventory.transferorders.CREATE` and `ZohoInventory.transferorders.READ` to the Self Client and generate a new refresh token.
+5. **Ids in the app.** Run **Fetch from Zoho** (items and batches) first: the export sends Zoho's item id and batch id, not our codes.
+
+In the app: **Transfer Orders → Export to Zoho**. A failed export stays in the list with Zoho's reason and a **Retry export** button. An exported transfer is locked: it can no longer be edited or deleted here, because the two systems would then disagree. Correct it with a new transfer.
+
+Not yet checked against a real Zoho (VERIFY on the first export, in a test organisation): finding an existing transfer by its number, sending our number with `ignore_auto_number_generation`, and whether Zoho books the transfer as done or *in transit*. If it is in transit, a "mark as received" step must be added before the Vending Machine location rises.
+
 ## 2. Catalyst tables
 
 `catalyst-config.json` sets `STORE=catalyst`, so the deployed function reads and writes the nine tables (`catalyst-database.md`).
